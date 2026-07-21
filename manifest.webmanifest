@@ -1,7 +1,7 @@
 {
   "name": "Annual Key Tracker",
   "short_name": "Key Tracker",
-  "description": "Local-only daily and weekly key tracker with a sticky performance entry bar, Outcomes workflows, timestamps, notes, reports, and tally counting.",
+  "description": "Local-only daily and weekly key tracker with a sticky performance entry bar, Outcomes workflows, individual key interactions, duplicate prompts, timestamps, notes, reports, and tally counting.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

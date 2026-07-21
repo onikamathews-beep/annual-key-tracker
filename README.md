@@ -1,4 +1,4 @@
-# Annual Key Tracker — Update v4
+# Annual Key Tracker — Update v5
 
 Upload every file in this folder to the root of your existing GitHub repository. Allow GitHub to replace the files with the same names.
 
@@ -21,8 +21,16 @@ Upload every file in this folder to the root of your existing GitHub repository.
 2. Choose **Add file → Upload files**.
 3. Select all eight files from this folder.
 4. Allow GitHub to replace the matching files.
-5. Use the commit message: `Add sticky performance entry bar`
+5. Use the commit message: `Fix individual key counting and duplicate prompts`
 6. Choose **Commit changes**.
 7. Reopen `https://onikamathews-beep.github.io/annual-key-tracker/`.
 
 The service-worker cache name was updated so the new layout should replace the older cached version. Tracker data remains in the browser’s local storage.
+
+
+## Version 5 changes
+
+- Every pasted key now counts as one interaction.
+- Keys submitted together remain visually grouped and share one timestamp.
+- Each key appears on its own row so its Outcomes workflow and Result can be edited independently.
+- Duplicate keys are no longer silently removed. A warning offers Add Anyway, Skip Duplicates, View Existing, or Cancel.

@@ -198,7 +198,7 @@
             <span>Paste or type keys</span>
             <textarea id="keyInput" placeholder="Paste one key per line, or separate keys with commas, spaces, or tabs."></textarea>
           </label>
-          <p class="helper">Keys pasted together stay grouped as one interaction and receive one timestamp.</p>
+          <p class="helper">Each key counts as one interaction. Keys pasted together stay visually grouped and share one timestamp.</p>
           <div class="entry-actions">
             <button class="button button-secondary" id="clearKeyInput" type="button">Clear</button>
             <button class="button button-primary" id="addKeysButton" type="button">Add Keys</button>
@@ -300,7 +300,7 @@
             </div>
           </div>
           <div class="hourly-chart" id="hourlyChart"></div>
-          <p class="privacy-note" id="hourlyChartNote">Each submitted Key Tracker group counts as one interaction. Meetings, lunches, and other work may affect the pattern.</p>
+          <p class="privacy-note" id="hourlyChartNote">Each key counts as one interaction. Keys submitted together share one timestamp. Meetings, lunches, and other work may affect the pattern.</p>
         </section>
       </div>
     </section>
@@ -463,6 +463,23 @@
       <div class="welcome-actions">
         <button class="button button-primary" id="skipImport" type="button">Start Without a File</button>
         <button class="button button-secondary" id="welcomeImport" type="button">Import Previous Data</button>
+      </div>
+    </section>
+  </div>
+
+
+  <div class="overlay" id="duplicateOverlay" aria-hidden="true">
+    <section class="duplicate-panel" role="dialog" aria-modal="true" aria-labelledby="duplicateTitle">
+      <p class="eyebrow">Duplicate warning</p>
+      <h2 id="duplicateTitle">Duplicate keys found</h2>
+      <p id="duplicateMessage">Duplicate keys were found in this submission.</p>
+      <div class="duplicate-key-list" id="duplicateKeyList"></div>
+      <p class="privacy-note">Skipping duplicates removes only the duplicate copies from this new submission. It does not delete previously saved entries.</p>
+      <div class="duplicate-actions">
+        <button class="button button-secondary" id="duplicateCancel" type="button">Cancel</button>
+        <button class="button button-secondary" id="duplicateViewExisting" type="button">View Existing</button>
+        <button class="button button-secondary" id="duplicateSkip" type="button">Skip Duplicates</button>
+        <button class="button button-primary" id="duplicateAddAnyway" type="button">Add Anyway</button>
       </div>
     </section>
   </div>

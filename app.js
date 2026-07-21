@@ -2,7 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'annual-key-tracker-github-v1';
-  const APP_VERSION = 4;
+  const APP_VERSION = 5;
   const THEMES = ['sea-breeze', 'classic-blue', 'sage-stone', 'warm-sand', 'charcoal-gold'];
   const OUTCOMES = ['Contacted', 'Snoozed', 'Unable to Contact'];
   const WORKFLOWS = ['PA PPQ', 'Appeals PPQ'];
@@ -15,6 +15,8 @@
   let activeView = 'today';
   let installPrompt = null;
   let xlsxLoadPromise = null;
+  let duplicatePromptResolver = null;
+  let duplicatePromptContext = null;
 
   function detectTimeZone() {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; }
@@ -109,20 +111,34 @@
     clean.statusOverride = NON_WORK_STATUSES.includes(clean.statusOverride)
       ? clean.statusOverride
       : NON_WORK_STATUSES.includes(source.dayType) ? source.dayType : '';
-    clean.entries = Array.isArray(source.entries) ? source.entries.map((entry, index) => {
+    clean.entries = Array.isArray(source.entries) ? source.entries.flatMap((entry, index) => {
       const type = normalizeMode(entry.type || source.mode) || 'tally';
-      const keys = Array.isArray(entry.keys) ? entry.keys.map(value => String(value)).filter(Boolean) : [];
-      const count = Math.max(1, Math.floor(Number(entry.count || keys.length || 1)));
-      return {
+      const keys = Array.isArray(entry.keys) ? entry.keys.map(value => String(value).trim()).filter(Boolean) : [];
+      const groupIndex = Number.isFinite(Number(entry.groupIndex)) ? Number(entry.groupIndex) : index % 5;
+      const groupId = entry.groupId || entry.submissionId || entry.id || createId('group');
+      const common = {
         ...entry,
-        id: entry.id || createId('entry'),
         type,
-        keys: type === 'keys' ? keys : [],
-        count,
         outcome: normalizeOutcome(entry.outcome),
         workflow: normalizeWorkflow(entry.workflow || entry.outcomesWorkflow || entry.ppq || fallbackWorkflow),
-        groupIndex: Number.isFinite(Number(entry.groupIndex)) ? Number(entry.groupIndex) : index % 5
+        groupId,
+        groupIndex
       };
+      if (type === 'keys') {
+        return keys.map((key, keyIndex) => ({
+          ...common,
+          id: keyIndex === 0 ? (entry.id || createId('key')) : createId('key'),
+          keys: [key],
+          count: 1
+        }));
+      }
+      const count = Math.max(1, Math.floor(Number(entry.count || 1)));
+      return [{
+        ...common,
+        id: entry.id || createId('tally'),
+        keys: [],
+        count
+      }];
     }) : [];
     clean.notes = Array.isArray(source.notes) ? source.notes.map(note => ({ ...note, id: note.id || createId('note') })) : [];
     if (!clean.mode && clean.entries.length) clean.mode = clean.entries[0].type;
@@ -349,21 +365,23 @@
   }
 
   function keyTokens(text) {
-    const seen = new Set();
     return String(text || '')
       .split(/[\s,;|]+/)
       .map(item => item.trim())
-      .filter(Boolean)
-      .filter(item => {
-        const key = item.toUpperCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
+      .filter(Boolean);
+  }
+
+  function normalizedKey(value) {
+    return String(value || '').trim().toUpperCase();
+  }
+
+  function nextGroupIndex(day) {
+    const previous = [...day.entries].reverse().find(entry => Number.isFinite(Number(entry.groupIndex)));
+    return previous ? (Number(previous.groupIndex) + 1) % 5 : 0;
   }
 
   function entryInteractions(entry) {
-    return entry.type === 'keys' ? 1 : Math.max(0, Number(entry.count || 0));
+    return entry.type === 'keys' ? Math.max(0, (entry.keys || []).length) : Math.max(0, Number(entry.count || 0));
   }
 
   function entryKeyCount(entry) {
@@ -423,6 +441,51 @@
     setTimeout(() => item.remove(), 3400);
   }
 
+  function closeDuplicatePrompt(action = 'cancel') {
+    const overlay = $('#duplicateOverlay');
+    overlay.classList.remove('open');
+    overlay.setAttribute('aria-hidden', 'true');
+    const resolver = duplicatePromptResolver;
+    duplicatePromptResolver = null;
+    const context = duplicatePromptContext;
+    duplicatePromptContext = null;
+    if (resolver) resolver({ action, context });
+  }
+
+  function promptForDuplicateKeys(duplicates, existingDuplicateKeys) {
+    const uniqueDuplicates = [...new Set(duplicates.map(item => normalizedKey(item.key)))];
+    const existingSet = new Set(existingDuplicateKeys.map(normalizedKey));
+    duplicatePromptContext = { duplicates: uniqueDuplicates, existing: [...existingSet] };
+    $('#duplicateMessage').textContent = `${duplicates.length} duplicate ${duplicates.length === 1 ? 'key was' : 'keys were'} found in this submission.`;
+    $('#duplicateKeyList').innerHTML = uniqueDuplicates.map(key => {
+      const label = existingSet.has(key) ? 'Already recorded for today' : 'Repeated in this paste';
+      return `<div class="duplicate-key-item"><strong>${escapeHtml(key)}</strong><span>${label}</span></div>`;
+    }).join('');
+    $('#duplicateViewExisting').disabled = existingSet.size === 0;
+    $('#duplicateOverlay').classList.add('open');
+    $('#duplicateOverlay').setAttribute('aria-hidden', 'false');
+    return new Promise(resolve => { duplicatePromptResolver = resolve; });
+  }
+
+  function showExistingDuplicateRows(keys) {
+    const wanted = new Set(keys.map(normalizedKey));
+    state.selectedDate = todayISO();
+    activeView = 'today';
+    $$('.view').forEach(section => section.classList.toggle('active', section.id === 'view-today'));
+    $('#mainPeriodControls').classList.remove('hidden');
+    $('#mainViewSelect').value = 'today';
+    renderAll();
+    setTimeout(() => {
+      const rows = $$('[data-history-key]');
+      rows.forEach(row => row.classList.remove('duplicate-highlight'));
+      const matches = rows.filter(row => wanted.has(normalizedKey(row.dataset.historyKey)));
+      matches.forEach(row => row.classList.add('duplicate-highlight'));
+      const first = matches[0] || $('.history-card');
+      first?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => matches.forEach(row => row.classList.remove('duplicate-highlight')), 5000);
+    }, 80);
+  }
+
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
   }
@@ -478,37 +541,74 @@
     return normalizeOutcome($(selector)?.value || state.lastOutcome);
   }
 
-  function addKeyBatchForDate(date, inputSelector, workflowSelector, outcomeSelector) {
+  async function addKeyBatchForDate(date, inputSelector, workflowSelector, outcomeSelector) {
     const day = getDay(date);
     if (!canEditActivity(date) || day.mode !== 'keys') return;
     const input = $(inputSelector);
     const keys = keyTokens(input?.value);
     if (!keys.length) return toast('Paste or type at least one key.');
-    const existing = new Set(day.entries.flatMap(entry => (entry.keys || []).map(key => String(key).toUpperCase())));
-    const newKeys = keys.filter(key => !existing.has(key.toUpperCase()));
-    if (!newKeys.length) return toast('Those keys are already recorded for today.');
+
+    const existing = new Set(day.entries.flatMap(entry => (entry.keys || []).map(normalizedKey)));
+    const seenInPaste = new Set();
+    const duplicates = [];
+    const nonDuplicates = [];
+    const existingDuplicateKeys = [];
+
+    keys.forEach(key => {
+      const normalized = normalizedKey(key);
+      const alreadyRecorded = existing.has(normalized);
+      const repeatedInPaste = seenInPaste.has(normalized);
+      if (alreadyRecorded || repeatedInPaste) {
+        duplicates.push({ key, alreadyRecorded, repeatedInPaste });
+        if (alreadyRecorded) existingDuplicateKeys.push(normalized);
+      } else {
+        nonDuplicates.push(key);
+      }
+      seenInPaste.add(normalized);
+    });
+
+    let keysToAdd = keys;
+    if (duplicates.length) {
+      const response = await promptForDuplicateKeys(duplicates, existingDuplicateKeys);
+      if (response.action === 'cancel') return;
+      if (response.action === 'view') {
+        showExistingDuplicateRows(response.context?.existing || []);
+        return;
+      }
+      if (response.action === 'skip') keysToAdd = nonDuplicates;
+    }
+
+    if (!keysToAdd.length) return toast('No new keys remain after skipping duplicates.');
     lockModeForFirstEntry(day);
     day.statusOverride = '';
     const workflow = selectedWorkflow(workflowSelector);
     const outcome = selectedOutcome(outcomeSelector);
-    day.entries.push({
-      id: createId('key'),
-      type: 'keys',
-      keys: newKeys,
-      count: newKeys.length,
-      outcome,
-      workflow,
-      time: new Date().toISOString(),
-      timeZone: activeTimeZone(),
-      groupIndex: day.entries.length % 5
+    const submittedAt = new Date().toISOString();
+    const timeZone = activeTimeZone();
+    const groupId = createId('group');
+    const groupIndex = nextGroupIndex(day);
+
+    keysToAdd.forEach(key => {
+      day.entries.push({
+        id: createId('key'),
+        type: 'keys',
+        keys: [key],
+        count: 1,
+        outcome,
+        workflow,
+        time: submittedAt,
+        timeZone,
+        groupId,
+        groupIndex
+      });
     });
+
     if (workflow) state.lastWorkflow = workflow;
     state.lastOutcome = outcome;
     if (input) input.value = '';
     saveState();
     renderAll();
-    const skipped = keys.length - newKeys.length;
-    toast(`${newKeys.length} key${newKeys.length === 1 ? '' : 's'} added as one interaction${skipped ? `; ${skipped} duplicate${skipped === 1 ? '' : 's'} skipped` : ''}.`);
+    toast(`${keysToAdd.length} interaction${keysToAdd.length === 1 ? '' : 's'} added in one group.`);
   }
 
   function addKeyBatch() {
@@ -531,7 +631,8 @@
       keys: [],
       outcome,
       workflow,
-      groupIndex: day.entries.length % 5
+      groupId: createId('group'),
+      groupIndex: nextGroupIndex(day)
     });
     if (workflow) state.lastWorkflow = workflow;
     state.lastOutcome = outcome;
@@ -784,7 +885,7 @@
     if (!editable) $('#entryNotice').textContent = 'Activity is read-only for this date. Use Date Status above to record Scheduled Off, PTO, Holiday, or Leave.';
     else if (!day.mode) $('#entryNotice').textContent = 'Select Key Tracker or Tally Counter. No file is required.';
     else if (!day.modeLocked) $('#entryNotice').textContent = 'The previous workday’s method is ready. Enter activity to continue with it, or switch methods before the first entry.';
-    else if (day.mode === 'keys') $('#entryNotice').textContent = `Each submitted group receives one timestamp in ${activeTimeZone()} and saves automatically.`;
+    else if (day.mode === 'keys') $('#entryNotice').textContent = `Each key counts as one interaction. Keys submitted together share one timestamp in ${activeTimeZone()} and save automatically.`;
     else $('#entryNotice').textContent = 'Tally additions save automatically without individual timestamps.';
 
     renderHistory(day, editable);
@@ -862,13 +963,22 @@
       return;
     }
     body.innerHTML = day.entries.map((entry, index) => {
-      const description = entry.type === 'keys' ? (entry.keys || []).join(', ') : `× ${entryInteractions(entry)}`;
+      const description = entry.type === 'keys' ? ((entry.keys || [])[0] || '') : `× ${entryInteractions(entry)}`;
       const time = entry.type === 'keys' && entry.time
         ? formatClockTime(entry.time, entry.timeZone || activeTimeZone())
         : '<span class="not-timestamped">Not timestamped</span>';
       const outcomeOptions = OUTCOMES.map(outcome => `<option${normalizeOutcome(entry.outcome) === outcome ? ' selected' : ''}>${outcome}</option>`).join('');
       const workflowOptions = ['', ...WORKFLOWS].map(workflow => `<option value="${escapeHtml(workflow)}"${normalizeWorkflow(entry.workflow) === workflow ? ' selected' : ''}>${workflow || 'Not selected'}</option>`).join('');
-      return `<tr class="group-${Number(entry.groupIndex ?? index) % 5}">
+      const groupId = entry.groupId || entry.id;
+      const previousGroupId = index > 0 ? (day.entries[index - 1].groupId || day.entries[index - 1].id) : '';
+      const nextGroupId = index < day.entries.length - 1 ? (day.entries[index + 1].groupId || day.entries[index + 1].id) : '';
+      const groupClasses = [
+        `group-${Number(entry.groupIndex ?? index) % 5}`,
+        groupId !== previousGroupId ? 'group-start' : '',
+        groupId !== nextGroupId ? 'group-end' : ''
+      ].filter(Boolean).join(' ');
+      const keyAttribute = entry.type === 'keys' ? ` data-history-key="${escapeHtml(description)}"` : '';
+      return `<tr class="${groupClasses}" data-group-id="${escapeHtml(groupId)}"${keyAttribute}>
         <td>${time}</td>
         <td><select data-workflow-id="${entry.id}" ${editable ? '' : 'disabled'}>${workflowOptions}</select></td>
         <td class="group-cell">${escapeHtml(description)}</td>
@@ -880,25 +990,45 @@
 
   function renderDailyTimeline(day, editable) {
     const zone = activeTimeZone();
-    const savedZones = [...new Set(day.entries.filter(entry => entry.type === 'keys' && entry.time).map(entry => entry.timeZone || zone))];
+    const keyEntries = day.entries.filter(entry => entry.type === 'keys' && entry.time);
+    const savedZones = [...new Set(keyEntries.map(entry => entry.timeZone || zone))];
     $('#timelineTimeZone').textContent = savedZones.length > 1 ? 'Multiple saved time zones' : `Time zone: ${savedZones[0] || zone}`;
     const events = [];
-    day.entries.filter(entry => entry.type === 'keys' && entry.time).forEach(entry => {
-      const entryZone = entry.timeZone || zone;
-      const parts = timeParts(entry.time, entryZone);
+    const groups = new Map();
+
+    keyEntries.forEach(entry => {
+      const groupId = entry.groupId || entry.id;
+      if (!groups.has(groupId)) groups.set(groupId, []);
+      groups.get(groupId).push(entry);
+    });
+
+    groups.forEach(entries => {
+      const first = entries[0];
+      const entryZone = first.timeZone || zone;
+      const parts = timeParts(first.time, entryZone);
       if (!parts) return;
-      const keyCount = (entry.keys || []).length;
-      const workflow = normalizeWorkflow(entry.workflow) || 'Outcomes not selected';
+      const keys = entries.flatMap(entry => entry.keys || []);
+      const outcomeCounts = { Contacted: 0, Snoozed: 0, 'Unable to Contact': 0 };
+      const workflowCounts = { 'PA PPQ': 0, 'Appeals PPQ': 0, 'Not selected': 0 };
+      entries.forEach(entry => {
+        outcomeCounts[normalizeOutcome(entry.outcome)] += entryInteractions(entry);
+        workflowCounts[normalizeWorkflow(entry.workflow) || 'Not selected'] += entryInteractions(entry);
+      });
+      const outcomeDetail = OUTCOMES.filter(outcome => outcomeCounts[outcome] > 0)
+        .map(outcome => `${outcomeCounts[outcome]} ${outcome}`).join(' · ');
+      const workflowDetail = [...WORKFLOWS, 'Not selected'].filter(workflow => workflowCounts[workflow] > 0)
+        .map(workflow => `${workflowCounts[workflow]} ${workflow}`).join(' · ');
       events.push({
         sort: parts.hour * 60 + parts.minute,
         kind: 'entry',
-        id: entry.id,
-        time: formatClockTime(entry.time, entryZone),
-        label: `1 interaction · ${keyCount} key${keyCount === 1 ? '' : 's'}`,
-        detail: `${workflow} · ${normalizeOutcome(entry.outcome)} · ${(entry.keys || []).join(', ')}`,
+        id: first.groupId || first.id,
+        time: formatClockTime(first.time, entryZone),
+        label: `${keys.length} interaction${keys.length === 1 ? '' : 's'}`,
+        detail: `${workflowDetail} · ${outcomeDetail} · ${keys.join(', ')}`,
         zone: entryZone
       });
     });
+
     day.notes.forEach(note => {
       const localTime = /^\d{2}:\d{2}$/.test(note.localTime || '') ? note.localTime : '12:00';
       const [hour, minute] = localTime.split(':').map(Number);
@@ -936,14 +1066,14 @@
     $('#hourlyTimeZone').textContent = savedZones.length > 1 ? `Multiple saved time zones · displayed in ${chartZone}` : `Time zone: ${chartZone}`;
     if (!keyEntries.length) {
       chart.innerHTML = '<div class="hourly-empty">No timestamped Key Tracker groups are available for this date.</div>';
-      $('#hourlyChartNote').textContent = 'Each submitted Key Tracker group will count as one interaction in its recorded hour.';
+      $('#hourlyChartNote').textContent = 'Each key counts as one interaction in the hour of its group timestamp.';
       return;
     }
     const buckets = new Map();
     keyEntries.forEach(entry => {
       const parts = timeParts(entry.time, chartZone);
       if (!parts) return;
-      buckets.set(parts.hour, (buckets.get(parts.hour) || 0) + 1);
+      buckets.set(parts.hour, (buckets.get(parts.hour) || 0) + entryInteractions(entry));
     });
     const recordedHours = [...buckets.keys()];
     const startHour = Math.min(6, ...recordedHours);
@@ -959,7 +1089,7 @@
       </div>`);
     }
     chart.innerHTML = rows.join('');
-    $('#hourlyChartNote').textContent = 'Each submitted Key Tracker group counts as one interaction. Meetings, lunches, and other work may affect the pattern.';
+    $('#hourlyChartNote').textContent = 'Each key counts as one interaction. Keys submitted together share one timestamp. Meetings, lunches, and other work may affect the pattern.';
   }
 
   function summarizeRange(dates) {
@@ -1375,6 +1505,12 @@
   }
 
   function bindEvents() {
+    $('#duplicateCancel').addEventListener('click', () => closeDuplicatePrompt('cancel'));
+    $('#duplicateAddAnyway').addEventListener('click', () => closeDuplicatePrompt('add'));
+    $('#duplicateSkip').addEventListener('click', () => closeDuplicatePrompt('skip'));
+    $('#duplicateViewExisting').addEventListener('click', () => closeDuplicatePrompt('view'));
+    $('#duplicateOverlay').addEventListener('click', event => { if (event.target === $('#duplicateOverlay')) closeDuplicatePrompt('cancel'); });
+
     $('#menuButton').addEventListener('click', openMenu);
     $('#closeMenu').addEventListener('click', closeMenu);
     $('#menuScrim').addEventListener('click', closeMenu);
