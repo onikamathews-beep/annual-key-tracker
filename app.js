@@ -2,74 +2,181 @@
   'use strict';
 
   const STORAGE_KEY = 'annual-key-tracker-github-v1';
+  const APP_VERSION = 3;
   const THEMES = ['sea-breeze', 'classic-blue', 'sage-stone', 'warm-sand', 'charcoal-gold'];
   const OUTCOMES = ['Contacted', 'Snoozed', 'Unable to Contact'];
+  const WORKFLOWS = ['PA PPQ', 'Appeals PPQ'];
+  const NON_WORK_STATUSES = ['Scheduled Off', 'PTO', 'Holiday', 'Leave'];
+  const NOTE_TYPES = ['Meeting', 'Lunch', 'Training', 'System Issue', 'Coaching', 'Other'];
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
-  const todayISO = () => {
-    const now = new Date();
-    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
-    return local.toISOString().slice(0, 10);
-  };
-
-  const defaultState = () => ({
-    version: 1,
-    selectedDate: todayISO(),
-    weekDate: todayISO(),
-    welcomeDone: false,
-    settings: { theme: 'sea-breeze', compactDashboard: false },
-    days: {}
-  });
-
-  let state = loadState();
+  let state = null;
   let activeView = 'today';
   let installPrompt = null;
   let xlsxLoadPromise = null;
 
-  function loadScript(source, timeoutMs) {
-    return new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      const timer = setTimeout(() => {
-        script.remove();
-        reject(new Error('The Excel library took too long to load.'));
-      }, timeoutMs);
-      script.src = source;
-      script.async = true;
-      script.onload = () => { clearTimeout(timer); resolve(); };
-      script.onerror = () => { clearTimeout(timer); script.remove(); reject(new Error('The Excel library could not be loaded.')); };
-      document.head.append(script);
-    });
+  function detectTimeZone() {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; }
+    catch (error) { return 'UTC'; }
   }
 
-  function ensureXlsx() {
-    if (window.XLSX) return Promise.resolve(window.XLSX);
-    if (xlsxLoadPromise) return xlsxLoadPromise;
-    xlsxLoadPromise = loadScript('./vendor/xlsx.full.min.js', 1800)
-      .catch(() => loadScript('https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js', 12000))
-      .then(() => {
-        if (!window.XLSX) throw new Error('The Excel library loaded without the expected XLSX tools.');
-        return window.XLSX;
-      })
-      .catch(error => { xlsxLoadPromise = null; throw error; });
-    return xlsxLoadPromise;
+  function validTimeZone(value) {
+    if (!value) return false;
+    try { new Intl.DateTimeFormat('en-US', { timeZone: value }).format(); return true; }
+    catch (error) { return false; }
+  }
+
+  function activeTimeZone() {
+    const detected = detectTimeZone();
+    if (!state?.settings || state.settings.automaticTimeZone !== false) return detected;
+    return validTimeZone(state.settings.timeZone) ? state.settings.timeZone : detected;
+  }
+
+  function dateISOInTimeZone(value = new Date(), timeZone = detectTimeZone()) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: validTimeZone(timeZone) ? timeZone : 'UTC',
+      year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(value);
+    const map = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    return `${map.year}-${map.month}-${map.day}`;
+  }
+
+  const todayISO = () => dateISOInTimeZone(new Date(), activeTimeZone());
+
+  function defaultState() {
+    const detected = detectTimeZone();
+    const today = dateISOInTimeZone(new Date(), detected);
+    return {
+      version: APP_VERSION,
+      selectedDate: today,
+      weekDate: today,
+      customStart: `${today.slice(0, 7)}-01`,
+      customEnd: today,
+      lastMode: null,
+      lastWorkflow: '',
+      welcomeDone: false,
+      settings: {
+        theme: 'sea-breeze',
+        compactDashboard: false,
+        automaticTimeZone: true,
+        timeZone: detected,
+        holidays: []
+      },
+      days: {}
+    };
+  }
+
+  function dayTemplate() {
+    return {
+      mode: null,
+      modeLocked: false,
+      modeInherited: false,
+      statusOverride: '',
+      entries: [],
+      notes: []
+    };
+  }
+
+  function normalizeOutcome(value) {
+    const text = String(value || '').trim().toLowerCase();
+    if (text.includes('snooz')) return 'Snoozed';
+    if (text.includes('unable') || text.includes('no contact') || text === 'utc') return 'Unable to Contact';
+    return 'Contacted';
+  }
+
+  function normalizeWorkflow(value) {
+    const text = String(value || '').trim().toLowerCase();
+    if (text.includes('appeal')) return 'Appeals PPQ';
+    if (text === 'pa ppq' || (text.includes('pa') && text.includes('ppq'))) return 'PA PPQ';
+    return '';
+  }
+
+  function normalizeMode(value) {
+    const text = String(value || '').trim().toLowerCase();
+    if (text.includes('tally') || text === 'count') return 'tally';
+    if (text.includes('key')) return 'keys';
+    return null;
+  }
+
+  function sanitizeDay(day) {
+    const source = day && typeof day === 'object' ? day : {};
+    const fallbackWorkflow = normalizeWorkflow(source.workflow || source.ppq);
+    const clean = { ...dayTemplate(), ...source };
+    clean.mode = normalizeMode(clean.mode);
+    clean.statusOverride = NON_WORK_STATUSES.includes(clean.statusOverride)
+      ? clean.statusOverride
+      : NON_WORK_STATUSES.includes(source.dayType) ? source.dayType : '';
+    clean.entries = Array.isArray(source.entries) ? source.entries.map((entry, index) => {
+      const type = normalizeMode(entry.type || source.mode) || 'tally';
+      const keys = Array.isArray(entry.keys) ? entry.keys.map(value => String(value)).filter(Boolean) : [];
+      const count = Math.max(1, Math.floor(Number(entry.count || keys.length || 1)));
+      return {
+        ...entry,
+        id: entry.id || createId('entry'),
+        type,
+        keys: type === 'keys' ? keys : [],
+        count,
+        outcome: normalizeOutcome(entry.outcome),
+        workflow: normalizeWorkflow(entry.workflow || entry.outcomesWorkflow || entry.ppq || fallbackWorkflow),
+        groupIndex: Number.isFinite(Number(entry.groupIndex)) ? Number(entry.groupIndex) : index % 5
+      };
+    }) : [];
+    clean.notes = Array.isArray(source.notes) ? source.notes.map(note => ({ ...note, id: note.id || createId('note') })) : [];
+    if (!clean.mode && clean.entries.length) clean.mode = clean.entries[0].type;
+    clean.modeLocked = Boolean(clean.entries.length || (source.modeLocked && clean.mode));
+    clean.modeInherited = Boolean(!clean.modeLocked && clean.mode && source.modeInherited);
+    delete clean.ppq;
+    delete clean.dayType;
+    return clean;
+  }
+
+  function deriveLatestMode(days) {
+    return Object.keys(days).sort().reverse().map(date => sanitizeDay(days[date]).mode).find(Boolean) || null;
+  }
+
+  function deriveLatestWorkflow(days) {
+    const dates = Object.keys(days).sort().reverse();
+    for (const date of dates) {
+      const entries = sanitizeDay(days[date]).entries.slice().reverse();
+      const found = entries.map(entry => normalizeWorkflow(entry.workflow)).find(Boolean);
+      if (found) return found;
+    }
+    return '';
   }
 
   function loadState() {
+    const defaults = defaultState();
     try {
       const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-      if (!parsed || typeof parsed !== 'object') return defaultState();
+      if (!parsed || typeof parsed !== 'object') return defaults;
+      const settings = { ...defaults.settings, ...(parsed.settings || {}) };
+      settings.automaticTimeZone = settings.automaticTimeZone !== false;
+      settings.timeZone = validTimeZone(settings.timeZone) ? settings.timeZone : detectTimeZone();
+      settings.holidays = [...new Set((Array.isArray(settings.holidays) ? settings.holidays : [])
+        .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value)))].sort();
+      const days = {};
+      Object.entries(parsed.days || {}).forEach(([date, day]) => {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(date)) days[date] = sanitizeDay(day);
+      });
       return {
-        ...defaultState(),
+        ...defaults,
         ...parsed,
-        settings: { ...defaultState().settings, ...(parsed.settings || {}) },
-        days: parsed.days && typeof parsed.days === 'object' ? parsed.days : {}
+        version: APP_VERSION,
+        selectedDate: defaults.selectedDate,
+        weekDate: defaults.weekDate,
+        settings,
+        days,
+        lastMode: normalizeMode(parsed.lastMode) || deriveLatestMode(days),
+        lastWorkflow: normalizeWorkflow(parsed.lastWorkflow) || deriveLatestWorkflow(days)
       };
     } catch (error) {
       console.error('Could not load tracker data:', error);
-      return defaultState();
+      return defaults;
     }
   }
+
+  state = loadState();
 
   function saveState(message = 'Saved locally') {
     try {
@@ -78,7 +185,7 @@
       if (status) {
         status.textContent = message;
         clearTimeout(saveState.timer);
-        saveState.timer = setTimeout(() => { status.textContent = 'Saved locally'; }, 1400);
+        saveState.timer = setTimeout(() => { status.textContent = 'Saved locally'; }, 1500);
       }
     } catch (error) {
       console.error('Could not save tracker data:', error);
@@ -86,26 +193,16 @@
     }
   }
 
-  function dayTemplate() {
-    return { mode: null, modeLocked: false, ppq: '', dayType: 'Work Day', entries: [] };
-  }
-
   function getDay(date, create = true) {
     if (!state.days[date] && create) state.days[date] = dayTemplate();
+    if (state.days[date]) state.days[date] = sanitizeDay(state.days[date]);
     return state.days[date] || dayTemplate();
-  }
-
-  function sanitizeDay(day) {
-    const clean = { ...dayTemplate(), ...(day || {}) };
-    clean.entries = Array.isArray(clean.entries) ? clean.entries : [];
-    clean.mode = clean.mode === 'keys' || clean.mode === 'tally' ? clean.mode : null;
-    clean.modeLocked = Boolean(clean.modeLocked && clean.mode);
-    return clean;
   }
 
   function isToday(date) { return date === todayISO(); }
   function isFuture(date) { return date > todayISO(); }
-  function canEdit(date) { return isToday(date); }
+  function isPast(date) { return date < todayISO(); }
+  function canEditActivity(date) { return isToday(date); }
 
   function parseDate(value) {
     if (!value) return null;
@@ -144,8 +241,7 @@
   function startOfWeek(date) {
     const d = new Date(`${date}T12:00:00`);
     const day = d.getDay();
-    const offset = day === 0 ? -6 : 1 - day;
-    d.setDate(d.getDate() + offset);
+    d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
     return toISODate(d);
   }
 
@@ -158,28 +254,95 @@
     return toISODate(d);
   }
 
+  function isWeekend(date) {
+    const day = new Date(`${date}T12:00:00`).getDay();
+    return day === 0 || day === 6;
+  }
+
+  function holidayDates() {
+    return Array.isArray(state.settings.holidays) ? state.settings.holidays : [];
+  }
+
+  function isSavedHoliday(date) { return holidayDates().includes(date); }
+
+  function isExcludedHoliday(date) {
+    const day = getDay(date, false);
+    return isSavedHoliday(date) || day.statusOverride === 'Holiday';
+  }
+
+  function rangeDates(start, end) {
+    if (!start || !end || start > end) return [];
+    const dates = [];
+    for (let date = start; date <= end; date = addDays(date, 1)) dates.push(date);
+    return dates;
+  }
+
+  function includedViewDates(start, end) {
+    return rangeDates(start, end).filter(date => !isWeekend(date) && !isExcludedHoliday(date));
+  }
+
+  function previousModeBefore(date) {
+    const dates = Object.keys(state.days).filter(item => item < date).sort().reverse();
+    for (const item of dates) {
+      const mode = getDay(item, false).mode;
+      if (mode) return mode;
+    }
+    return state.lastMode;
+  }
+
+  function ensureTodayModeDefault() {
+    const date = todayISO();
+    const day = getDay(date);
+    if (!day.mode && !day.entries.length) {
+      const previous = previousModeBefore(date);
+      if (previous) {
+        day.mode = previous;
+        day.modeInherited = true;
+        day.modeLocked = false;
+      }
+    }
+  }
+
+  function currentTimeValue(timeZone = activeTimeZone()) {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone, hour: '2-digit', minute: '2-digit', hour12: false
+    }).formatToParts(new Date());
+    const map = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    return `${map.hour}:${map.minute}`;
+  }
+
+  function timeParts(iso, timeZone = activeTimeZone()) {
+    if (!iso) return null;
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return null;
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: validTimeZone(timeZone) ? timeZone : activeTimeZone(),
+      hour: '2-digit', minute: '2-digit', hour12: false
+    }).formatToParts(date);
+    const map = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    return { hour: Number(map.hour), minute: Number(map.minute), value: `${map.hour}:${map.minute}` };
+  }
+
+  function formatClockTime(value, timeZone = activeTimeZone()) {
+    if (!value) return '';
+    if (/^\d{2}:\d{2}$/.test(value)) {
+      const [hour, minute] = value.split(':').map(Number);
+      return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
+        .format(new Date(2020, 0, 1, hour, minute));
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat(undefined, {
+      hour: 'numeric', minute: '2-digit', timeZone: validTimeZone(timeZone) ? timeZone : activeTimeZone()
+    }).format(date);
+  }
+
+  function hourLabel(hour) {
+    return new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).format(new Date(2020, 0, 1, hour, 0));
+  }
+
   function createId(prefix = 'entry') {
     return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  }
-
-  function normalizeOutcome(value) {
-    const text = String(value || '').trim().toLowerCase();
-    if (text.includes('snooz')) return 'Snoozed';
-    if (text.includes('unable') || text.includes('no contact') || text.includes('utc')) return 'Unable to Contact';
-    return 'Contacted';
-  }
-
-  function normalizeMode(value) {
-    const text = String(value || '').trim().toLowerCase();
-    if (text.includes('tally') || text === 'count') return 'tally';
-    if (text.includes('key')) return 'keys';
-    return null;
-  }
-
-  function safeImportedTime(date, value) {
-    if (!value) return `${date}T12:00:00.000Z`;
-    const parsed = new Date(`${date} ${String(value).trim()}`);
-    return Number.isNaN(parsed.getTime()) ? `${date}T12:00:00.000Z` : parsed.toISOString();
   }
 
   function keyTokens(text) {
@@ -196,37 +359,56 @@
       });
   }
 
+  function entryInteractions(entry) {
+    return entry.type === 'keys' ? 1 : Math.max(0, Number(entry.count || 0));
+  }
+
+  function entryKeyCount(entry) {
+    return entry.type === 'keys' ? (entry.keys || []).length : 0;
+  }
+
   function daySummary(date) {
     const day = sanitizeDay(getDay(date, false));
-    const entries = day.entries;
-    const total = entries.reduce((sum, entry) => sum + Math.max(0, Number(entry.count || (entry.keys || []).length || 0)), 0);
     const outcomes = { Contacted: 0, Snoozed: 0, 'Unable to Contact': 0 };
-    entries.forEach(entry => {
-      const count = Math.max(0, Number(entry.count || (entry.keys || []).length || 0));
-      const outcome = normalizeOutcome(entry.outcome);
-      outcomes[outcome] += count;
+    const workflows = { 'PA PPQ': 0, 'Appeals PPQ': 0, 'Not selected': 0 };
+    let totalInteractions = 0;
+    let totalKeys = 0;
+    day.entries.forEach(entry => {
+      const units = entryInteractions(entry);
+      totalInteractions += units;
+      totalKeys += entryKeyCount(entry);
+      outcomes[normalizeOutcome(entry.outcome)] += units;
+      const workflow = normalizeWorkflow(entry.workflow) || 'Not selected';
+      workflows[workflow] += units;
     });
+    const provisional = { date, day, totalInteractions, totalKeys, outcomes, workflows };
     return {
       date,
       method: day.mode,
-      ppq: day.ppq,
-      dayType: day.dayType,
-      total,
-      interactions: entries.length,
+      status: effectiveStatus(date, provisional),
+      statusOverride: day.statusOverride,
+      totalInteractions,
+      totalKeys,
       outcomes,
-      entries
+      workflows,
+      entries: day.entries,
+      notes: day.notes
     };
   }
 
-  function rangeDates(start, end) {
-    if (!start || !end || start > end) return [];
-    const dates = [];
-    for (let date = start; date <= end; date = addDays(date, 1)) dates.push(date);
-    return dates;
+  function effectiveStatus(date, summaryOrNull = null) {
+    const day = summaryOrNull?.day || getDay(date, false);
+    const total = summaryOrNull?.totalInteractions ?? day.entries.reduce((sum, entry) => sum + entryInteractions(entry), 0);
+    if (day.statusOverride) return day.statusOverride;
+    if (total > 0) return 'Work Day';
+    if (isSavedHoliday(date)) return 'Holiday';
+    if (isPast(date)) return 'Absent';
+    if (isToday(date)) return 'In Progress';
+    return 'Not set';
   }
 
-  function rangeSummaries(start, end) {
-    return rangeDates(start, end).map(daySummary);
+  function statusCountsAsWorkday(status, totalInteractions) {
+    return status === 'Work Day' && totalInteractions > 0;
   }
 
   function toast(message) {
@@ -236,6 +418,10 @@
     item.textContent = message;
     region.append(item);
     setTimeout(() => item.remove(), 3400);
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
   }
 
   function downloadBlob(content, filename, type) {
@@ -258,63 +444,89 @@
   function chooseMode(mode) {
     const date = state.selectedDate;
     const day = getDay(date);
-    if (!canEdit(date)) return toast('Only today can be changed. Older dates remain available for review.');
-    if (day.modeLocked) return toast(`${day.mode === 'keys' ? 'Key Tracker' : 'Tally Counter'} is already locked for today.`);
+    if (!canEditActivity(date) || day.modeLocked) return;
+    if (day.modeInherited && day.mode === mode) return;
     day.mode = mode;
     day.modeLocked = true;
+    day.modeInherited = false;
+    state.lastMode = mode;
     saveState(`${mode === 'keys' ? 'Key Tracker' : 'Tally Counter'} selected`);
     renderAll();
+  }
+
+  function lockModeForFirstEntry(day) {
+    if (!day.mode) return false;
+    if (!day.modeLocked) {
+      day.modeLocked = true;
+      day.modeInherited = false;
+      state.lastMode = day.mode;
+    }
+    return true;
+  }
+
+  function currentWorkflow() {
+    return normalizeWorkflow($('#workflowSelect').value);
   }
 
   function addKeyBatch() {
     const date = state.selectedDate;
     const day = getDay(date);
-    if (!canEdit(date) || day.dayType !== 'Work Day' || day.mode !== 'keys' || !day.modeLocked) return;
+    if (!canEditActivity(date) || day.mode !== 'keys') return;
     const keys = keyTokens($('#keyInput').value);
     if (!keys.length) return toast('Paste or type at least one key.');
     const existing = new Set(day.entries.flatMap(entry => (entry.keys || []).map(key => String(key).toUpperCase())));
     const newKeys = keys.filter(key => !existing.has(key.toUpperCase()));
     if (!newKeys.length) return toast('Those keys are already recorded for today.');
-    const duplicateCount = keys.length - newKeys.length;
+    lockModeForFirstEntry(day);
+    day.statusOverride = '';
+    const workflow = currentWorkflow();
     day.entries.push({
       id: createId('key'),
       type: 'keys',
       keys: newKeys,
       count: newKeys.length,
       outcome: $('#outcomeSelect').value,
+      workflow,
       time: new Date().toISOString(),
+      timeZone: activeTimeZone(),
       groupIndex: day.entries.length % 5
     });
+    if (workflow) state.lastWorkflow = workflow;
     $('#keyInput').value = '';
     saveState();
     renderAll();
-    toast(`${newKeys.length} key${newKeys.length === 1 ? '' : 's'} added${duplicateCount ? `; ${duplicateCount} duplicate${duplicateCount === 1 ? '' : 's'} skipped` : ''}.`);
+    const skipped = keys.length - newKeys.length;
+    toast(`${newKeys.length} key${newKeys.length === 1 ? '' : 's'} added as one interaction${skipped ? `; ${skipped} duplicate${skipped === 1 ? '' : 's'} skipped` : ''}.`);
   }
 
   function addTally(count) {
     const date = state.selectedDate;
     const day = getDay(date);
     const amount = Math.floor(Number(count));
-    if (!canEdit(date) || day.dayType !== 'Work Day' || day.mode !== 'tally' || !day.modeLocked) return;
+    if (!canEditActivity(date) || day.mode !== 'tally') return;
     if (!Number.isFinite(amount) || amount < 1) return toast('Enter a number greater than zero.');
+    lockModeForFirstEntry(day);
+    day.statusOverride = '';
+    const workflow = currentWorkflow();
     day.entries.push({
       id: createId('tally'),
       type: 'tally',
       count: amount,
       keys: [],
       outcome: $('#outcomeSelect').value,
-      time: new Date().toISOString(),
+      workflow,
       groupIndex: day.entries.length % 5
     });
+    if (workflow) state.lastWorkflow = workflow;
     $('#customTallyInput').value = '';
     saveState();
     renderAll();
-    toast(`${amount} added to today’s tally.`);
+    toast(`${amount} interaction${amount === 1 ? '' : 's'} added.`);
   }
 
   function undoLastTally() {
     const day = getDay(state.selectedDate);
-    if (!canEdit(state.selectedDate) || day.mode !== 'tally') return;
+    if (!canEditActivity(state.selectedDate) || day.mode !== 'tally') return;
     const index = [...day.entries].map(entry => entry.type).lastIndexOf('tally');
     if (index < 0) return toast('There is no tally batch to undo.');
     day.entries.splice(index, 1);
@@ -325,7 +537,7 @@
 
   function removeEntry(id) {
     const day = getDay(state.selectedDate);
-    if (!canEdit(state.selectedDate)) return;
+    if (!canEditActivity(state.selectedDate)) return;
     const before = day.entries.length;
     day.entries = day.entries.filter(entry => entry.id !== id);
     if (day.entries.length === before) return;
@@ -336,7 +548,7 @@
 
   function updateEntryOutcome(id, outcome) {
     const day = getDay(state.selectedDate);
-    if (!canEdit(state.selectedDate)) return;
+    if (!canEditActivity(state.selectedDate)) return;
     const entry = day.entries.find(item => item.id === id);
     if (!entry) return;
     entry.outcome = normalizeOutcome(outcome);
@@ -344,29 +556,63 @@
     renderAll();
   }
 
-  function clearSelectedDay() {
+  function updateEntryWorkflow(id, workflow) {
     const day = getDay(state.selectedDate);
-    if (!canEdit(state.selectedDate)) return toast('Only today can be cleared.');
-    if (!day.entries.length) return toast('There is no activity to clear.');
-    if (!confirm('Clear all activity for today? The selected tracking method will remain locked.')) return;
-    day.entries = [];
+    if (!canEditActivity(state.selectedDate)) return;
+    const entry = day.entries.find(item => item.id === id);
+    if (!entry) return;
+    entry.workflow = normalizeWorkflow(workflow);
     saveState();
     renderAll();
-    toast('Today’s activity was cleared.');
+  }
+
+  function addNote() {
+    const date = state.selectedDate;
+    const day = getDay(date);
+    if (!canEditActivity(date)) return toast('Notes can be added only to today.');
+    const type = NOTE_TYPES.includes($('#noteTypeSelect').value) ? $('#noteTypeSelect').value : 'Other';
+    const localTime = $('#noteTimeInput').value || currentTimeValue();
+    const text = $('#noteTextInput').value.trim();
+    day.notes.push({ id: createId('note'), type, text, localTime, timeZone: activeTimeZone() });
+    $('#noteTextInput').value = '';
+    $('#noteTimeInput').value = currentTimeValue();
+    saveState();
+    renderAll();
+    toast(`${type} note added.`);
+  }
+
+  function removeNote(id) {
+    const day = getDay(state.selectedDate);
+    if (!canEditActivity(state.selectedDate)) return;
+    day.notes = day.notes.filter(note => note.id !== id);
+    saveState();
+    renderAll();
+    toast('Note removed.');
+  }
+
+  function clearSelectedDay() {
+    const day = getDay(state.selectedDate);
+    if (!canEditActivity(state.selectedDate)) return toast('Only today can be cleared.');
+    if (!day.entries.length && !day.notes.length) return toast('There is no activity or note to clear.');
+    if (!confirm('Clear all activity and notes for today?')) return;
+    day.entries = [];
+    day.notes = [];
+    saveState();
+    renderAll();
+    toast('Today’s activity and notes were cleared.');
   }
 
   function copyDaySummary() {
     const summary = daySummary(state.selectedDate);
-    const method = summary.method === 'keys' ? 'Key Tracker' : summary.method === 'tally' ? 'Tally Counter' : 'Not selected';
     const text = [
-      `${formatDate(summary.date)} — ${method}`,
-      `PPQ: ${summary.ppq || 'Not selected'}`,
-      `Status: ${summary.dayType}`,
-      `Total keys: ${summary.total}`,
-      `Interactions: ${summary.interactions}`,
+      `${formatDate(summary.date)} — ${summary.status}`,
+      `Total Interactions: ${summary.totalInteractions}`,
       `Contacted: ${summary.outcomes.Contacted}`,
       `Snoozed: ${summary.outcomes.Snoozed}`,
-      `Unable to Contact: ${summary.outcomes['Unable to Contact']}`
+      `Unable to Contact: ${summary.outcomes['Unable to Contact']}`,
+      `PA PPQ: ${summary.workflows['PA PPQ']}`,
+      `Appeals PPQ: ${summary.workflows['Appeals PPQ']}`,
+      `Outcomes not selected: ${summary.workflows['Not selected']}`
     ].join('\n');
     navigator.clipboard?.writeText(text).then(() => toast('Daily summary copied.')).catch(() => {
       const area = document.createElement('textarea');
@@ -379,76 +625,147 @@
     });
   }
 
+  function updateDateStatus(value) {
+    const date = state.selectedDate;
+    if (isToday(date)) return;
+    const day = getDay(date);
+    if (value && day.entries.length) {
+      const proceed = confirm(`This date already has recorded activity. Mark it as ${value} anyway?`);
+      if (!proceed) {
+        $('#dayTypeSelect').value = day.statusOverride || '';
+        return;
+      }
+    }
+    day.statusOverride = NON_WORK_STATUSES.includes(value) ? value : '';
+    saveState(day.statusOverride ? 'Date status saved' : 'Automatic status restored');
+    renderAll();
+  }
+
+  function openMenu() {
+    $('#menuDrawer').classList.add('open');
+    $('#menuDrawer').setAttribute('aria-hidden', 'false');
+    $('#menuButton').setAttribute('aria-expanded', 'true');
+    $('#menuScrim').hidden = false;
+    requestAnimationFrame(() => $('#menuScrim').classList.add('open'));
+  }
+
+  function closeMenu() {
+    $('#menuDrawer').classList.remove('open');
+    $('#menuDrawer').setAttribute('aria-hidden', 'true');
+    $('#menuButton').setAttribute('aria-expanded', 'false');
+    $('#menuScrim').classList.remove('open');
+    setTimeout(() => { $('#menuScrim').hidden = true; }, 180);
+  }
+
   function switchView(view) {
     activeView = view;
-    $$('.nav-tab').forEach(button => button.classList.toggle('active', button.dataset.view === view));
     $$('.view').forEach(section => section.classList.toggle('active', section.id === `view-${view}`));
-    if (view === 'week') renderWeek();
-    if (view === 'dashboard') renderDashboard();
-    if (view === 'reports') renderReports();
+    $('#mainPeriodControls').classList.toggle('hidden', !['today', 'week'].includes(view));
+    if (view === 'today' || view === 'week') $('#mainViewSelect').value = view;
+    closeMenu();
+    renderAll();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function periodAnchor() {
+    return activeView === 'week' ? (state.weekDate || todayISO()) : state.selectedDate;
+  }
+
+  function weekRangeLabel(anchor) {
+    const start = startOfWeek(anchor);
+    const end = addDays(start, 4);
+    const sameMonth = start.slice(0, 7) === end.slice(0, 7);
+    if (sameMonth) {
+      return `${formatDate(start, { month: 'short', day: 'numeric' })}–${formatDate(end, { day: 'numeric', year: 'numeric' })}`;
+    }
+    return `${formatDate(start, { month: 'short', day: 'numeric' })}–${formatDate(end, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+  }
+
+  function renderPeriodControls() {
+    if (!['today', 'week'].includes(activeView)) return;
+    const anchor = periodAnchor();
+    $('#selectedDate').value = anchor;
+    $('#mainViewSelect').value = activeView;
+    $('#dateDisplayButton').textContent = activeView === 'week'
+      ? weekRangeLabel(anchor)
+      : isToday(anchor)
+        ? `Today · ${formatDate(anchor, { month: 'short', day: 'numeric' })}`
+        : formatDate(anchor, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    const current = activeView === 'week'
+      ? startOfWeek(anchor) === startOfWeek(todayISO())
+      : isToday(anchor);
+    $('#goToday').hidden = current;
+    $('#previousDay').setAttribute('aria-label', activeView === 'week' ? 'Previous week' : 'Previous day');
+    $('#nextDay').setAttribute('aria-label', activeView === 'week' ? 'Next week' : 'Next day');
   }
 
   function renderToday() {
+    if (isToday(state.selectedDate)) ensureTodayModeDefault();
     const date = state.selectedDate;
     const day = getDay(date);
     const summary = daySummary(date);
-    const editable = canEdit(date);
-    const workday = day.dayType === 'Work Day';
+    const editable = canEditActivity(date);
 
-    $('#selectedDate').value = date;
-    $('#dateBadge').textContent = isToday(date) ? 'Today' : isFuture(date) ? 'Future date' : 'Read only';
-    $('#ppqSelect').value = day.ppq || '';
-    $('#dayTypeSelect').value = day.dayType || 'Work Day';
-    $('#outcomeSelect').value = OUTCOMES.includes($('#outcomeSelect').value) ? $('#outcomeSelect').value : 'Contacted';
-    $('#dayStatusChip').textContent = day.dayType;
+    $('#dailySummaryDate').textContent = formatDate(date, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    $('#dailyStatusBadge').textContent = summary.status;
+    $('#dailyStatusBadge').className = `date-status-badge status-${summary.status.toLowerCase().replaceAll(' ', '-')}`;
+    $('#dailyTotalMetric').textContent = summary.totalInteractions.toLocaleString();
+    $('#dailyContactedMetric').textContent = summary.outcomes.Contacted.toLocaleString();
+    $('#dailySnoozedMetric').textContent = summary.outcomes.Snoozed.toLocaleString();
+    $('#dailyUnableMetric').textContent = summary.outcomes['Unable to Contact'].toLocaleString();
+    renderDailyBreakdown(summary);
 
+    $('#nonWorkStatusCard').classList.toggle('hidden', editable);
+    $('#dayTypeSelect').value = day.statusOverride || '';
+    $('#dateStatusHelp').textContent = isPast(date)
+      ? summary.status === 'Absent'
+        ? 'No interactions were recorded, so this date defaults to Absent and is excluded from averages and goals. Select a reason only when needed.'
+        : `Current status: ${summary.status}.`
+      : `Current status: ${summary.status}. You may mark a future date as Scheduled Off, PTO, Holiday, or Leave.`;
+
+    const chooserVisible = editable && !day.modeLocked;
+    $('#modeChooser').classList.toggle('hidden', !chooserVisible);
     $('#keyModeButton').classList.toggle('active', day.mode === 'keys');
     $('#tallyModeButton').classList.toggle('active', day.mode === 'tally');
-    $('#keyModeButton').disabled = !editable || day.modeLocked;
-    $('#tallyModeButton').disabled = !editable || day.modeLocked;
-    $('#modeLockPill').textContent = day.modeLocked ? `${day.mode === 'keys' ? 'Key Tracker' : 'Tally Counter'} locked` : editable ? 'Choose once today' : 'View only';
-    $('#modeLockPill').classList.toggle('locked', day.modeLocked);
-    $('#modeHelp').textContent = day.modeLocked
-      ? `${day.mode === 'keys' ? 'Key Tracker' : 'Tally Counter'} is saved only for ${formatDate(date)}. A new date starts unselected.`
-      : editable ? 'Choose once for this workday. Tomorrow starts unselected.' : 'This date is available for review. Only today can be changed.';
+    $('#modeChooserHelp').textContent = day.modeInherited && day.mode
+      ? `Continue with the previous workday’s choice or switch before the first entry.`
+      : 'Choose a method to begin. There is no separate confirmation button.';
 
-    const title = day.mode === 'keys' ? 'Key Tracker' : day.mode === 'tally' ? 'Tally Counter' : 'Choose a tracking method';
-    $('#entryTitle').textContent = title;
-    $('#entrySubtitle').textContent = day.modeLocked ? 'This choice cannot be changed again for the selected date.' : 'Your choice applies only to the selected date.';
+    $('#workflowSelect').value = state.lastWorkflow || '';
+    $('#workflowSelect').disabled = !editable;
+    $('#outcomeSelect').disabled = !editable || !day.mode;
+
     $('#unselectedArea').classList.toggle('hidden', Boolean(day.mode));
     $('#keyEntryArea').classList.toggle('hidden', day.mode !== 'keys');
     $('#tallyEntryArea').classList.toggle('hidden', day.mode !== 'tally');
 
-    $('#ppqSelect').disabled = !editable;
-    $('#dayTypeSelect').disabled = !editable;
-    $('#outcomeSelect').disabled = !editable || !workday || !day.modeLocked;
-    $('#keyInput').disabled = !editable || !workday || day.mode !== 'keys';
-    $('#addKeysButton').disabled = !editable || !workday || day.mode !== 'keys';
+    $('#keyInput').disabled = !editable || day.mode !== 'keys';
+    $('#addKeysButton').disabled = !editable || day.mode !== 'keys';
     $('#clearKeyInput').disabled = !editable || day.mode !== 'keys';
-    $$('[data-tally]').forEach(button => { button.disabled = !editable || !workday || day.mode !== 'tally'; });
-    $('#customTallyInput').disabled = !editable || !workday || day.mode !== 'tally';
-    $('#addCustomTally').disabled = !editable || !workday || day.mode !== 'tally';
+    $$('[data-tally]').forEach(button => { button.disabled = !editable || day.mode !== 'tally'; });
+    $('#customTallyInput').disabled = !editable || day.mode !== 'tally';
+    $('#addCustomTally').disabled = !editable || day.mode !== 'tally';
     $('#undoTally').disabled = !editable || day.mode !== 'tally' || !day.entries.some(entry => entry.type === 'tally');
-    $('#clearDay').disabled = !editable || !day.entries.length;
+    $('#clearDay').disabled = !editable || (!day.entries.length && !day.notes.length);
+    $('#noteTypeSelect').disabled = !editable;
+    $('#noteTimeInput').disabled = !editable;
+    $('#noteTextInput').disabled = !editable;
+    $('#addNoteButton').disabled = !editable;
+    $('#tallyTotal').textContent = summary.totalInteractions.toLocaleString();
 
-    $('#tallyTotal').textContent = summary.total.toLocaleString();
-    $('#dailyTotalMetric').textContent = summary.total.toLocaleString();
-    $('#dailyInteractionMetric').textContent = summary.interactions.toLocaleString();
-    $('#dailyContactedMetric').textContent = summary.outcomes.Contacted.toLocaleString();
-    $('#dailySnoozedMetric').textContent = summary.outcomes.Snoozed.toLocaleString();
-    $('#dailyUnableMetric').textContent = summary.outcomes['Unable to Contact'].toLocaleString();
+    if (!editable) $('#entryNotice').textContent = 'Activity is read-only for this date. Use Date Status above to record Scheduled Off, PTO, Holiday, or Leave.';
+    else if (!day.mode) $('#entryNotice').textContent = 'Select Key Tracker or Tally Counter. No file is required.';
+    else if (!day.modeLocked) $('#entryNotice').textContent = 'The previous workday’s method is ready. Enter activity to continue with it, or switch methods before the first entry.';
+    else if (day.mode === 'keys') $('#entryNotice').textContent = `Each submitted group receives one timestamp in ${activeTimeZone()} and saves automatically.`;
+    else $('#entryNotice').textContent = 'Tally additions save automatically without individual timestamps.';
 
-    if (!day.mode) $('#entryNotice').textContent = 'Select Key Tracker or Tally Counter before entering activity. No file is required.';
-    else if (!editable) $('#entryNotice').textContent = 'This date is read-only. Use Reports or Settings to import older activity.';
-    else if (!workday) $('#entryNotice').textContent = `Activity entry is disabled while the day status is ${day.dayType}.`;
-    else $('#entryNotice').textContent = 'Activity saves automatically in this browser.';
-
-    renderDailyBreakdown(summary);
     renderHistory(day, editable);
+    renderDailyTimeline(day, editable);
+    renderHourlyChart(day);
   }
 
   function renderDailyBreakdown(summary) {
-    const total = summary.total || 1;
+    const total = summary.totalInteractions || 1;
     $('#dailyBreakdown').innerHTML = OUTCOMES.map(outcome => {
       const value = summary.outcomes[outcome];
       const percent = Math.round((value / total) * 100);
@@ -459,49 +776,187 @@
   function renderHistory(day, editable) {
     const body = $('#historyBody');
     if (!day.entries.length) {
-      body.innerHTML = '<tr><td class="empty-row" colspan="6">No activity has been recorded for this date.</td></tr>';
+      body.innerHTML = '<tr><td class="empty-row" colspan="5">No activity has been recorded for this date.</td></tr>';
       return;
     }
     body.innerHTML = day.entries.map((entry, index) => {
-      const count = Number(entry.count || (entry.keys || []).length || 0);
-      const description = entry.type === 'keys' ? (entry.keys || []).join(', ') : `× ${count}`;
-      const time = entry.time ? new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(entry.time)) : '';
-      const options = OUTCOMES.map(outcome => `<option${normalizeOutcome(entry.outcome) === outcome ? ' selected' : ''}>${outcome}</option>`).join('');
+      const description = entry.type === 'keys' ? (entry.keys || []).join(', ') : `× ${entryInteractions(entry)}`;
+      const time = entry.type === 'keys' && entry.time
+        ? formatClockTime(entry.time, entry.timeZone || activeTimeZone())
+        : '<span class="not-timestamped">Not timestamped</span>';
+      const outcomeOptions = OUTCOMES.map(outcome => `<option${normalizeOutcome(entry.outcome) === outcome ? ' selected' : ''}>${outcome}</option>`).join('');
+      const workflowOptions = ['', ...WORKFLOWS].map(workflow => `<option value="${escapeHtml(workflow)}"${normalizeWorkflow(entry.workflow) === workflow ? ' selected' : ''}>${workflow || 'Not selected'}</option>`).join('');
       return `<tr class="group-${Number(entry.groupIndex ?? index) % 5}">
         <td>${time}</td>
-        <td>${entry.type === 'keys' ? 'Key group' : 'Tally batch'}</td>
+        <td><select data-workflow-id="${entry.id}" ${editable ? '' : 'disabled'}>${workflowOptions}</select></td>
         <td class="group-cell">${escapeHtml(description)}</td>
-        <td><select data-outcome-id="${entry.id}" ${editable ? '' : 'disabled'}>${options}</select></td>
-        <td>Interaction ${index + 1}</td>
+        <td><select data-outcome-id="${entry.id}" ${editable ? '' : 'disabled'}>${outcomeOptions}</select></td>
         <td><button class="button button-danger" data-delete-id="${entry.id}" type="button" ${editable ? '' : 'disabled'}>Remove</button></td>
       </tr>`;
     }).join('');
   }
 
-  function escapeHtml(value) {
-    return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
+  function renderDailyTimeline(day, editable) {
+    const zone = activeTimeZone();
+    const savedZones = [...new Set(day.entries.filter(entry => entry.type === 'keys' && entry.time).map(entry => entry.timeZone || zone))];
+    $('#timelineTimeZone').textContent = savedZones.length > 1 ? 'Multiple saved time zones' : `Time zone: ${savedZones[0] || zone}`;
+    const events = [];
+    day.entries.filter(entry => entry.type === 'keys' && entry.time).forEach(entry => {
+      const entryZone = entry.timeZone || zone;
+      const parts = timeParts(entry.time, entryZone);
+      if (!parts) return;
+      const keyCount = (entry.keys || []).length;
+      const workflow = normalizeWorkflow(entry.workflow) || 'Outcomes not selected';
+      events.push({
+        sort: parts.hour * 60 + parts.minute,
+        kind: 'entry',
+        id: entry.id,
+        time: formatClockTime(entry.time, entryZone),
+        label: `1 interaction · ${keyCount} key${keyCount === 1 ? '' : 's'}`,
+        detail: `${workflow} · ${normalizeOutcome(entry.outcome)} · ${(entry.keys || []).join(', ')}`,
+        zone: entryZone
+      });
+    });
+    day.notes.forEach(note => {
+      const localTime = /^\d{2}:\d{2}$/.test(note.localTime || '') ? note.localTime : '12:00';
+      const [hour, minute] = localTime.split(':').map(Number);
+      events.push({
+        sort: hour * 60 + minute,
+        kind: 'note',
+        id: note.id,
+        time: formatClockTime(localTime),
+        label: NOTE_TYPES.includes(note.type) ? note.type : 'Other',
+        detail: note.text || 'No additional details',
+        zone: note.timeZone || zone
+      });
+    });
+    events.sort((a, b) => a.sort - b.sort || a.kind.localeCompare(b.kind));
+    const tallyMessage = day.mode === 'tally' ? '<div class="timeline-info">Tally additions are not timestamped. Notes still appear on the timeline.</div>' : '';
+    $('#dailyTimeline').innerHTML = tallyMessage + (events.length ? events.map(event => `<div class="timeline-item ${event.kind}">
+      <div class="timeline-time">${escapeHtml(event.time)}</div>
+      <div class="timeline-dot" aria-hidden="true"></div>
+      <div class="timeline-content"><strong>${escapeHtml(event.label)}</strong><span>${escapeHtml(event.detail)}</span>${event.zone !== zone ? `<small>${escapeHtml(event.zone)}</small>` : ''}</div>
+      ${event.kind === 'note' ? `<button class="timeline-remove" data-note-delete-id="${event.id}" type="button" ${editable ? '' : 'disabled'} aria-label="Remove note">×</button>` : ''}
+    </div>`).join('') : '<div class="empty-timeline">No timestamped key groups or notes are available for this date.</div>');
+  }
+
+  function renderHourlyChart(day) {
+    const chart = $('#hourlyChart');
+    if (day.mode === 'tally') {
+      $('#hourlyTimeZone').textContent = `Time zone: ${activeTimeZone()}`;
+      chart.innerHTML = '<div class="hourly-empty">Hourly trends are unavailable because this day was recorded using the Tally Counter.</div>';
+      $('#hourlyChartNote').textContent = 'Tally additions are intentionally not timestamped, so catch-up entries cannot distort hourly trends.';
+      return;
+    }
+    const keyEntries = day.entries.filter(entry => entry.type === 'keys' && entry.time);
+    const savedZones = [...new Set(keyEntries.map(entry => validTimeZone(entry.timeZone) ? entry.timeZone : activeTimeZone()))];
+    const chartZone = savedZones.length === 1 ? savedZones[0] : activeTimeZone();
+    $('#hourlyTimeZone').textContent = savedZones.length > 1 ? `Multiple saved time zones · displayed in ${chartZone}` : `Time zone: ${chartZone}`;
+    if (!keyEntries.length) {
+      chart.innerHTML = '<div class="hourly-empty">No timestamped Key Tracker groups are available for this date.</div>';
+      $('#hourlyChartNote').textContent = 'Each submitted Key Tracker group will count as one interaction in its recorded hour.';
+      return;
+    }
+    const buckets = new Map();
+    keyEntries.forEach(entry => {
+      const parts = timeParts(entry.time, chartZone);
+      if (!parts) return;
+      buckets.set(parts.hour, (buckets.get(parts.hour) || 0) + 1);
+    });
+    const recordedHours = [...buckets.keys()];
+    const startHour = Math.min(6, ...recordedHours);
+    const endHour = Math.max(18, ...recordedHours);
+    const maxValue = Math.max(...buckets.values(), 1);
+    const rows = [];
+    for (let hour = startHour; hour <= endHour; hour += 1) {
+      const value = buckets.get(hour) || 0;
+      rows.push(`<div class="hour-column" title="${hourLabel(hour)}: ${value} interaction${value === 1 ? '' : 's'}">
+        <strong>${value || ''}</strong>
+        <div class="hour-bar-wrap"><div class="hour-bar" style="height:${value ? Math.max(8, Math.round((value / maxValue) * 150)) : 2}px"></div></div>
+        <span>${hourLabel(hour)}</span>
+      </div>`);
+    }
+    chart.innerHTML = rows.join('');
+    $('#hourlyChartNote').textContent = 'Each submitted Key Tracker group counts as one interaction. Meetings, lunches, and other work may affect the pattern.';
+  }
+
+  function summarizeRange(dates) {
+    const summaries = dates.map(daySummary);
+    return summaries.reduce((acc, item) => {
+      acc.totalInteractions += item.totalInteractions;
+      OUTCOMES.forEach(outcome => { acc.outcomes[outcome] += item.outcomes[outcome]; });
+      WORKFLOWS.forEach(workflow => { acc.workflows[workflow] += item.workflows[workflow]; });
+      acc.workflows['Not selected'] += item.workflows['Not selected'];
+      if (statusCountsAsWorkday(item.status, item.totalInteractions)) acc.workDays += 1;
+      return acc;
+    }, {
+      totalInteractions: 0,
+      workDays: 0,
+      outcomes: { Contacted: 0, Snoozed: 0, 'Unable to Contact': 0 },
+      workflows: { 'PA PPQ': 0, 'Appeals PPQ': 0, 'Not selected': 0 }
+    });
   }
 
   function renderWeek() {
-    const anchor = state.weekDate || state.selectedDate;
+    const anchor = state.weekDate || todayISO();
     const start = startOfWeek(anchor);
-    $('#weekDate').value = anchor;
-    const cards = rangeDates(start, addDays(start, 6)).map(date => {
-      const summary = daySummary(date);
-      const dayName = formatDate(date, { weekday: 'long' });
-      const method = summary.method === 'keys' ? 'Key Tracker' : summary.method === 'tally' ? 'Tally Counter' : 'Not selected';
-      return `<article class="card week-day${isToday(date) ? ' today' : ''}">
-        <h3>${dayName}</h3><div class="date">${formatDate(date)}</div>
-        <div class="week-method">${method} · ${summary.dayType}</div>
-        <div class="week-stats">
-          <div class="week-stat"><span>Total</span><strong>${summary.total}</strong></div>
-          <div class="week-stat"><span>Interactions</span><strong>${summary.interactions}</strong></div>
-          <div class="week-stat"><span>Contacted</span><strong>${summary.outcomes.Contacted}</strong></div>
-          <div class="week-stat"><span>Unable</span><strong>${summary.outcomes['Unable to Contact']}</strong></div>
-        </div>
-      </article>`;
-    }).join('');
-    $('#weekGrid').innerHTML = cards;
+    const end = addDays(start, 4);
+    const weekdays = rangeDates(start, end);
+    const included = weekdays.filter(date => !isExcludedHoliday(date));
+    const holidayCount = weekdays.length - included.length;
+    const summaries = included.map(daySummary);
+    const totals = summarizeRange(included);
+    const average = totals.workDays ? (totals.totalInteractions / totals.workDays).toFixed(1) : '0';
+    $('#weekExclusionNote').textContent = `${included.length} weekday${included.length === 1 ? '' : 's'} shown. Weekends are always ignored${holidayCount ? ` and ${holidayCount} holiday${holidayCount === 1 ? ' is' : 's are'} excluded` : ''}. Absent and non-working days do not count toward averages.`;
+    $('#weekSummaryStrip').innerHTML = `
+      <div><span>Total interactions</span><strong>${totals.totalInteractions}</strong></div>
+      <div><span>Worked days</span><strong>${totals.workDays}</strong></div>
+      <div><span>Average per worked day</span><strong>${average}</strong></div>
+      <div><span>Contacted</span><strong>${totals.outcomes.Contacted}</strong></div>`;
+    $('#weekGrid').innerHTML = summaries.length ? summaries.map(item => `<article class="card week-day${isToday(item.date) ? ' today' : ''}">
+      <h3>${formatDate(item.date, { weekday: 'long' })}</h3>
+      <div class="date">${formatDate(item.date)}</div>
+      <div class="week-method">${escapeHtml(item.status)}</div>
+      <div class="week-stats">
+        <div class="week-stat"><span>Total Interactions</span><strong>${item.totalInteractions}</strong></div>
+        <div class="week-stat"><span>Contacted</span><strong>${item.outcomes.Contacted}</strong></div>
+        <div class="week-stat"><span>Snoozed</span><strong>${item.outcomes.Snoozed}</strong></div>
+        <div class="week-stat"><span>Unable</span><strong>${item.outcomes['Unable to Contact']}</strong></div>
+      </div>
+    </article>`).join('') : '<div class="card empty-business-range">No weekdays remain after holidays are excluded.</div>';
+  }
+
+  function renderCustom() {
+    const start = $('#customStart').value || state.customStart || startOfMonth();
+    const end = $('#customEnd').value || state.customEnd || todayISO();
+    state.customStart = start;
+    state.customEnd = end;
+    $('#customStart').value = start;
+    $('#customEnd').value = end;
+    if (!start || !end || start > end) {
+      $('#customExclusionNote').textContent = 'Choose a valid date range.';
+      $('#customSummary').innerHTML = '';
+      $('#customGrid').innerHTML = '';
+      return;
+    }
+    const allDates = rangeDates(start, end);
+    const includedDates = includedViewDates(start, end);
+    const weekendCount = allDates.filter(isWeekend).length;
+    const holidayCount = allDates.filter(date => !isWeekend(date) && isExcludedHoliday(date)).length;
+    const summaries = includedDates.map(daySummary);
+    const totals = summarizeRange(includedDates);
+    const average = totals.workDays ? (totals.totalInteractions / totals.workDays).toFixed(1) : '0';
+    $('#customExclusionNote').textContent = `${includedDates.length} weekday${includedDates.length === 1 ? '' : 's'} shown · ${weekendCount} weekend date${weekendCount === 1 ? '' : 's'} ignored · ${holidayCount} holiday${holidayCount === 1 ? '' : 's'} excluded. Absent and non-working days do not count toward averages.`;
+    $('#customSummary').innerHTML = `
+      <div class="dashboard-metric"><span>Worked days</span><strong>${totals.workDays}</strong></div>
+      <div class="dashboard-metric"><span>Total interactions</span><strong>${totals.totalInteractions.toLocaleString()}</strong></div>
+      <div class="dashboard-metric"><span>Contacted</span><strong>${totals.outcomes.Contacted.toLocaleString()}</strong></div>
+      <div class="dashboard-metric"><span>Unable</span><strong>${totals.outcomes['Unable to Contact'].toLocaleString()}</strong></div>
+      <div class="dashboard-metric"><span>Average per worked day</span><strong>${average}</strong></div>`;
+    $('#customGrid').innerHTML = summaries.length ? summaries.map(item => `<article class="card custom-day${isToday(item.date) ? ' today' : ''}">
+      <div><strong>${formatDate(item.date, { weekday: 'short', month: 'short', day: 'numeric' })}</strong><span>${escapeHtml(item.status)}</span></div>
+      <div class="custom-day-stats"><span>Total <strong>${item.totalInteractions}</strong></span><span>Contacted <strong>${item.outcomes.Contacted}</strong></span><span>Unable <strong>${item.outcomes['Unable to Contact']}</strong></span></div>
+    </article>`).join('') : '<div class="card empty-business-range">No weekdays are available in this range.</div>';
   }
 
   function renderDashboard() {
@@ -509,32 +964,27 @@
     const end = $('#dashboardEnd').value || endOfMonth();
     $('#dashboardStart').value = start;
     $('#dashboardEnd').value = end;
-    const summaries = rangeSummaries(start, end);
-    const totals = summaries.reduce((acc, item) => {
-      acc.total += item.total;
-      acc.interactions += item.interactions;
-      acc.workDays += item.dayType === 'Work Day' && item.method ? 1 : 0;
-      OUTCOMES.forEach(outcome => { acc.outcomes[outcome] += item.outcomes[outcome]; });
-      return acc;
-    }, { total: 0, interactions: 0, workDays: 0, outcomes: { Contacted: 0, Snoozed: 0, 'Unable to Contact': 0 } });
-    const average = totals.workDays ? (totals.total / totals.workDays).toFixed(1) : '0';
-    const contactRate = totals.total ? `${Math.round((totals.outcomes.Contacted / totals.total) * 100)}%` : '0%';
+    const dates = includedViewDates(start, end);
+    const summaries = dates.map(daySummary);
+    const totals = summarizeRange(dates);
+    const average = totals.workDays ? (totals.totalInteractions / totals.workDays).toFixed(1) : '0';
+    const contactRate = totals.totalInteractions ? `${Math.round((totals.outcomes.Contacted / totals.totalInteractions) * 100)}%` : '0%';
     const metrics = $('#dashboardMetrics');
     metrics.classList.toggle('compact', Boolean(state.settings.compactDashboard));
     metrics.innerHTML = `
-      <div class="dashboard-metric"><span>Total keys</span><strong>${totals.total.toLocaleString()}</strong></div>
-      <div class="dashboard-metric"><span>Interactions</span><strong>${totals.interactions.toLocaleString()}</strong></div>
-      <div class="dashboard-metric"><span>Tracked workdays</span><strong>${totals.workDays}</strong></div>
+      <div class="dashboard-metric"><span>Total interactions</span><strong>${totals.totalInteractions.toLocaleString()}</strong></div>
+      <div class="dashboard-metric"><span>Worked days</span><strong>${totals.workDays}</strong></div>
       <div class="dashboard-metric"><span>Daily average</span><strong>${average}</strong></div>
-      <div class="dashboard-metric full"><span>Contact rate</span><strong>${contactRate}</strong></div>`;
+      <div class="dashboard-metric"><span>Contact rate</span><strong>${contactRate}</strong></div>
+      <div class="dashboard-metric full"><span>Absent and non-working dates</span><strong>${summaries.filter(item => !statusCountsAsWorkday(item.status, item.totalInteractions)).length}</strong></div>`;
 
     const outcomeMax = Math.max(...Object.values(totals.outcomes), 1);
     $('#outcomeChart').innerHTML = OUTCOMES.map(outcome => `<div class="chart-row"><span>${outcome}</span><div class="chart-track"><div class="chart-fill" style="width:${Math.round((totals.outcomes[outcome] / outcomeMax) * 100)}%"></div></div><strong>${totals.outcomes[outcome]}</strong></div>`).join('');
 
-    const activeDays = summaries.filter(item => item.total > 0);
-    const maxDaily = Math.max(...activeDays.map(item => item.total), 1);
+    const activeDays = summaries.filter(item => item.totalInteractions > 0);
+    const maxDaily = Math.max(...activeDays.map(item => item.totalInteractions), 1);
     $('#dailyChart').innerHTML = activeDays.length
-      ? activeDays.map(item => `<div class="daily-column" title="${formatDate(item.date)}: ${item.total}"><strong>${item.total}</strong><div class="daily-bar" style="height:${Math.max(3, Math.round((item.total / maxDaily) * 190))}px"></div><span>${formatDate(item.date, { month: 'short', day: 'numeric' })}</span></div>`).join('')
+      ? activeDays.map(item => `<div class="daily-column" title="${formatDate(item.date)}: ${item.totalInteractions}"><strong>${item.totalInteractions}</strong><div class="daily-bar" style="height:${Math.max(3, Math.round((item.totalInteractions / maxDaily) * 190))}px"></div><span>${formatDate(item.date, { month: 'short', day: 'numeric' })}</span></div>`).join('')
       : '<div class="empty-row">No activity is available in this range.</div>';
   }
 
@@ -543,79 +993,108 @@
     const end = $('#reportEnd').value || endOfMonth();
     $('#reportStart').value = start;
     $('#reportEnd').value = end;
-    return rangeSummaries(start, end).filter(item => item.method || item.total || item.dayType !== 'Work Day');
+    return rangeDates(start, end)
+      .filter(date => !isWeekend(date))
+      .map(daySummary)
+      .filter(item => item.totalInteractions > 0 || item.status !== 'Not set' || item.statusOverride);
   }
 
   function renderReports() {
     const rows = reportRows();
     $('#reportBody').innerHTML = rows.length ? rows.map(item => `<tr>
       <td>${formatDate(item.date)}</td>
-      <td>${item.method === 'keys' ? 'Key Tracker' : item.method === 'tally' ? 'Tally Counter' : ''}</td>
-      <td>${escapeHtml(item.ppq || '')}</td>
-      <td>${escapeHtml(item.dayType)}</td>
-      <td>${item.total}</td>
-      <td>${item.interactions}</td>
+      <td>${escapeHtml(item.status)}</td>
+      <td>${item.totalInteractions}</td>
       <td>${item.outcomes.Contacted}</td>
       <td>${item.outcomes.Snoozed}</td>
       <td>${item.outcomes['Unable to Contact']}</td>
+      <td>${item.workflows['PA PPQ']}</td>
+      <td>${item.workflows['Appeals PPQ']}</td>
+      <td>${item.workflows['Not selected']}</td>
     </tr>`).join('') : '<tr><td class="empty-row" colspan="9">No report data is available in this range.</td></tr>';
   }
 
   function exportCsv() {
     const rows = reportRows();
-    const headers = ['Date', 'Method', 'PPQ', 'Day Status', 'Total Keys', 'Interactions', 'Contacted', 'Snoozed', 'Unable to Contact'];
+    const headers = ['Date', 'Status', 'Total Interactions', 'Contacted', 'Snoozed', 'Unable to Contact', 'PA PPQ', 'Appeals PPQ', 'Outcomes Not Selected'];
     const lines = [headers, ...rows.map(item => [
-      item.date,
-      item.method === 'keys' ? 'Key Tracker' : item.method === 'tally' ? 'Tally Counter' : '',
-      item.ppq,
-      item.dayType,
-      item.total,
-      item.interactions,
-      item.outcomes.Contacted,
-      item.outcomes.Snoozed,
-      item.outcomes['Unable to Contact']
+      item.date, item.status, item.totalInteractions, item.outcomes.Contacted, item.outcomes.Snoozed,
+      item.outcomes['Unable to Contact'], item.workflows['PA PPQ'], item.workflows['Appeals PPQ'], item.workflows['Not selected']
     ])].map(row => row.map(escapeCsv).join(','));
     downloadBlob(lines.join('\n'), `Annual_Key_Tracker_Report_${$('#reportStart').value}_to_${$('#reportEnd').value}.csv`, 'text/csv;charset=utf-8');
   }
 
+  function loadScript(source, timeoutMs) {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      const timer = setTimeout(() => { script.remove(); reject(new Error('The Excel library took too long to load.')); }, timeoutMs);
+      script.src = source;
+      script.async = true;
+      script.onload = () => { clearTimeout(timer); resolve(); };
+      script.onerror = () => { clearTimeout(timer); script.remove(); reject(new Error('The Excel library could not be loaded.')); };
+      document.head.append(script);
+    });
+  }
+
+  function ensureXlsx() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    if (xlsxLoadPromise) return xlsxLoadPromise;
+    xlsxLoadPromise = loadScript('https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js', 12000)
+      .then(() => {
+        if (!window.XLSX) throw new Error('The Excel library loaded without the expected XLSX tools.');
+        return window.XLSX;
+      })
+      .catch(error => { xlsxLoadPromise = null; throw error; });
+    return xlsxLoadPromise;
+  }
+
   async function exportExcel() {
-    try {
-      await ensureXlsx();
-    } catch (error) {
+    try { await ensureXlsx(); }
+    catch (error) {
       console.error(error);
       toast('Excel export is unavailable. Exporting CSV instead.');
       return exportCsv();
     }
     const rows = reportRows().map(item => ({
       Date: item.date,
-      Method: item.method === 'keys' ? 'Key Tracker' : item.method === 'tally' ? 'Tally Counter' : '',
-      PPQ: item.ppq,
-      'Day Status': item.dayType,
-      'Total Keys': item.total,
-      Interactions: item.interactions,
+      Status: item.status,
+      'Total Interactions': item.totalInteractions,
       Contacted: item.outcomes.Contacted,
       Snoozed: item.outcomes.Snoozed,
-      'Unable to Contact': item.outcomes['Unable to Contact']
+      'Unable to Contact': item.outcomes['Unable to Contact'],
+      'PA PPQ': item.workflows['PA PPQ'],
+      'Appeals PPQ': item.workflows['Appeals PPQ'],
+      'Outcomes Not Selected': item.workflows['Not selected']
     }));
     const detailRows = [];
+    const noteRows = [];
     Object.keys(state.days).sort().forEach(date => {
       const day = getDay(date, false);
       day.entries.forEach((entry, index) => detailRows.push({
         Date: date,
+        Status: effectiveStatus(date),
         Method: day.mode === 'keys' ? 'Key Tracker' : day.mode === 'tally' ? 'Tally Counter' : '',
-        PPQ: day.ppq,
-        'Day Status': day.dayType,
         Interaction: index + 1,
-        Type: entry.type === 'keys' ? 'Key Group' : 'Tally Batch',
+        Outcomes: normalizeWorkflow(entry.workflow) || 'Not selected',
+        Result: normalizeOutcome(entry.outcome),
         Keys: (entry.keys || []).join(', '),
-        Count: Number(entry.count || (entry.keys || []).length || 0),
-        Outcome: normalizeOutcome(entry.outcome),
-        Time: entry.time || ''
+        'Interaction Count': entryInteractions(entry),
+        'Key Count': entryKeyCount(entry),
+        Time: entry.type === 'keys' ? entry.time || '' : '',
+        'Time Zone': entry.type === 'keys' ? entry.timeZone || '' : ''
+      }));
+      day.notes.forEach(note => noteRows.push({
+        Date: date,
+        Time: note.localTime || '',
+        'Time Zone': note.timeZone || '',
+        Type: note.type || 'Other',
+        Note: note.text || ''
       }));
     });
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), 'Daily Summary');
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(detailRows), 'Activity Detail');
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(noteRows), 'Daily Notes');
     XLSX.writeFile(workbook, `Annual_Key_Tracker_Report_${$('#reportStart').value}_to_${$('#reportEnd').value}.xlsx`);
   }
 
@@ -629,20 +1108,30 @@
     try {
       const parsed = JSON.parse(await file.text());
       if (!parsed || typeof parsed !== 'object' || !parsed.days) throw new Error('This is not a recognized tracker backup.');
+      const defaults = defaultState();
       const importedDays = {};
       Object.entries(parsed.days).forEach(([date, day]) => {
         const validDate = parseDate(date);
         if (validDate) importedDays[validDate] = sanitizeDay(day);
       });
+      const importedSettings = { ...defaults.settings, ...(parsed.settings || {}) };
+      importedSettings.automaticTimeZone = importedSettings.automaticTimeZone !== false;
+      importedSettings.timeZone = validTimeZone(importedSettings.timeZone) ? importedSettings.timeZone : detectTimeZone();
+      importedSettings.holidays = [...new Set((Array.isArray(importedSettings.holidays) ? importedSettings.holidays : [])
+        .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value)))].sort();
       state = {
-        ...defaultState(),
+        ...defaults,
         ...parsed,
+        version: APP_VERSION,
         days: importedDays,
-        settings: { ...defaultState().settings, ...(parsed.settings || {}) },
+        settings: importedSettings,
         selectedDate: todayISO(),
         weekDate: todayISO(),
+        lastMode: normalizeMode(parsed.lastMode) || deriveLatestMode(importedDays),
+        lastWorkflow: normalizeWorkflow(parsed.lastWorkflow) || deriveLatestWorkflow(importedDays),
         welcomeDone: true
       };
+      ensureTodayModeDefault();
       saveState('Backup imported');
       applySettings();
       closeOverlays();
@@ -652,6 +1141,12 @@
       console.error(error);
       toast(error.message || 'The backup could not be imported.');
     }
+  }
+
+  function safeImportedTime(date, value) {
+    if (!value) return `${date}T12:00:00.000Z`;
+    const parsed = new Date(`${date} ${String(value).trim()}`);
+    return Number.isNaN(parsed.getTime()) ? `${date}T12:00:00.000Z` : parsed.toISOString();
   }
 
   async function importSpreadsheet(file) {
@@ -672,25 +1167,36 @@
           const mode = normalizeMode(normalized.method || normalized.mode || normalized.type || normalized['tracking method']);
           const keyText = normalized.keys || normalized.key || normalized['key id'] || normalized['key(s)'] || normalized.activity || '';
           const keys = keyTokens(keyText);
-          const count = Math.floor(Number(normalized.count || normalized.total || normalized['total keys'] || keys.length || 0));
-          const outcome = normalizeOutcome(normalized.outcome || normalized.result || normalized.status);
-          if (normalized.ppq) day.ppq = String(normalized.ppq);
-          if (normalized['day status'] || normalized['day type']) day.dayType = String(normalized['day status'] || normalized['day type']);
+          const count = Math.floor(Number(normalized.count || normalized.total || normalized['total interactions'] || normalized['total keys'] || keys.length || 0));
+          const possibleOutcomesField = normalized.outcomes || '';
+          const workflow = normalizeWorkflow(normalized.workflow || normalized['outcomes workflow'] || normalized.ppq || possibleOutcomesField);
+          const outcome = normalizeOutcome(normalized.outcome || normalized.result || (workflow ? '' : possibleOutcomesField) || normalized.status);
+          const importedStatus = normalized['day status'] || normalized['day type'];
+          if (NON_WORK_STATUSES.includes(importedStatus)) day.statusOverride = importedStatus;
           const resolvedMode = mode || (keys.length ? 'keys' : count > 0 ? 'tally' : null);
           if (!resolvedMode) { skipped += 1; return; }
-          if (!day.mode) { day.mode = resolvedMode; day.modeLocked = true; }
-          const entryCount = resolvedMode === 'keys' ? keys.length : count;
+          if (!day.mode) day.mode = resolvedMode;
+          day.modeLocked = true;
+          day.modeInherited = false;
+          const entryCount = resolvedMode === 'keys' ? Math.max(1, keys.length) : count;
           if (entryCount < 1) { skipped += 1; return; }
-          day.entries.push({
+          const entry = {
             id: createId('import'),
             type: resolvedMode,
             keys: resolvedMode === 'keys' ? keys : [],
             count: entryCount,
             outcome,
-            time: safeImportedTime(date, normalized.time),
+            workflow,
             groupIndex: day.entries.length % 5,
             importedFrom: file.name
-          });
+          };
+          if (resolvedMode === 'keys') {
+            entry.timeZone = validTimeZone(normalized['time zone'] || normalized.timezone) ? (normalized['time zone'] || normalized.timezone) : activeTimeZone();
+            entry.time = safeImportedTime(date, normalized.time);
+          }
+          day.entries.push(entry);
+          if (workflow) state.lastWorkflow = workflow;
+          state.lastMode = resolvedMode;
           imported += 1;
         });
       });
@@ -710,6 +1216,7 @@
     if (!confirm('Reset all tracker data and settings in this browser? Download a backup first if you need the current data.')) return;
     state = defaultState();
     localStorage.removeItem(STORAGE_KEY);
+    activeView = 'today';
     applySettings();
     closeOverlays();
     renderAll();
@@ -717,9 +1224,11 @@
     toast('All local tracker data was reset.');
   }
 
-  function openSettings() {
+  function openSettings(sectionId = '') {
+    closeMenu();
     $('#settingsOverlay').classList.add('open');
     $('#settingsOverlay').setAttribute('aria-hidden', 'false');
+    if (sectionId) setTimeout(() => $(`#${sectionId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
   }
 
   function showWelcome() {
@@ -734,36 +1243,100 @@
     });
   }
 
+  function populateTimeZones() {
+    const select = $('#timeZoneSelect');
+    if (select.options.length) return;
+    let zones = [];
+    try { zones = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : []; }
+    catch (error) { zones = []; }
+    const common = ['America/Phoenix', 'America/Los_Angeles', 'America/Denver', 'America/Chicago', 'America/New_York', 'America/Anchorage', 'Pacific/Honolulu', 'UTC'];
+    zones = [...new Set([...common, ...zones])];
+    select.innerHTML = zones.map(zone => `<option value="${escapeHtml(zone)}">${escapeHtml(zone.replaceAll('_', ' '))}</option>`).join('');
+  }
+
+  function renderHolidayList() {
+    const dates = holidayDates();
+    $('#holidayList').innerHTML = dates.length
+      ? dates.map(date => `<div class="holiday-item"><span>${formatDate(date, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span><button type="button" data-remove-holiday="${date}" aria-label="Remove holiday">×</button></div>`).join('')
+      : '<p class="privacy-note">No holidays or excluded dates have been added.</p>';
+  }
+
   function applySettings() {
     const theme = THEMES.includes(state.settings.theme) ? state.settings.theme : 'sea-breeze';
     document.documentElement.dataset.theme = theme;
     $('#themeSelect').value = theme;
     $('#compactMode').checked = Boolean(state.settings.compactDashboard);
+    populateTimeZones();
+    const detected = detectTimeZone();
+    const automatic = state.settings.automaticTimeZone !== false;
+    $('#automaticTimeZone').checked = automatic;
+    $('#detectedTimeZone').textContent = automatic ? `Detected from this device: ${detected}` : `Automatic detection available: ${detected}`;
+    $('#manualTimeZoneField').classList.toggle('disabled-field', automatic);
+    $('#timeZoneSelect').disabled = automatic;
+    const selectedZone = validTimeZone(state.settings.timeZone) ? state.settings.timeZone : detected;
+    if (![...$('#timeZoneSelect').options].some(option => option.value === selectedZone)) {
+      $('#timeZoneSelect').insertAdjacentHTML('afterbegin', `<option value="${escapeHtml(selectedZone)}">${escapeHtml(selectedZone)}</option>`);
+    }
+    $('#timeZoneSelect').value = selectedZone;
+    renderHolidayList();
   }
 
   function renderAll() {
     state.days[state.selectedDate] = sanitizeDay(getDay(state.selectedDate));
-    renderToday();
+    renderPeriodControls();
+    if (activeView === 'today') renderToday();
     if (activeView === 'week') renderWeek();
+    if (activeView === 'custom') renderCustom();
     if (activeView === 'dashboard') renderDashboard();
     if (activeView === 'reports') renderReports();
   }
 
   function bindEvents() {
-    $$('.nav-tab').forEach(button => button.addEventListener('click', () => switchView(button.dataset.view)));
-    $('#settingsButton').addEventListener('click', openSettings);
-    $('#closeSettings').addEventListener('click', closeOverlays);
-    $('#settingsOverlay').addEventListener('click', event => { if (event.target === $('#settingsOverlay')) closeOverlays(); });
+    $('#menuButton').addEventListener('click', openMenu);
+    $('#closeMenu').addEventListener('click', closeMenu);
+    $('#menuScrim').addEventListener('click', closeMenu);
+    $$('[data-menu-view]').forEach(button => button.addEventListener('click', () => switchView(button.dataset.menuView)));
+    $('#menuSettings').addEventListener('click', () => openSettings());
+    $('#menuBackup').addEventListener('click', () => openSettings('backupSettings'));
 
-    $('#previousDay').addEventListener('click', () => { state.selectedDate = addDays(state.selectedDate, -1); saveState(); renderAll(); });
-    $('#nextDay').addEventListener('click', () => { state.selectedDate = addDays(state.selectedDate, 1); saveState(); renderAll(); });
-    $('#selectedDate').addEventListener('change', event => { if (event.target.value) { state.selectedDate = event.target.value; saveState(); renderAll(); } });
-    $('#goToday').addEventListener('click', () => { state.selectedDate = todayISO(); saveState(); renderAll(); });
+    $('#mainViewSelect').addEventListener('change', event => {
+      const view = event.target.value;
+      if (view === 'week') state.weekDate = state.selectedDate || todayISO();
+      switchView(view);
+    });
+    $('#previousDay').addEventListener('click', () => {
+      if (activeView === 'week') state.weekDate = addDays(state.weekDate || todayISO(), -7);
+      else state.selectedDate = addDays(state.selectedDate, -1);
+      saveState();
+      renderAll();
+    });
+    $('#nextDay').addEventListener('click', () => {
+      if (activeView === 'week') state.weekDate = addDays(state.weekDate || todayISO(), 7);
+      else state.selectedDate = addDays(state.selectedDate, 1);
+      saveState();
+      renderAll();
+    });
+    $('#selectedDate').addEventListener('change', event => {
+      if (!event.target.value) return;
+      if (activeView === 'week') state.weekDate = event.target.value;
+      else state.selectedDate = event.target.value;
+      saveState();
+      renderAll();
+    });
+    $('#goToday').addEventListener('click', () => {
+      if (activeView === 'week') state.weekDate = todayISO();
+      else state.selectedDate = todayISO();
+      saveState();
+      renderAll();
+    });
 
     $('#keyModeButton').addEventListener('click', () => chooseMode('keys'));
     $('#tallyModeButton').addEventListener('click', () => chooseMode('tally'));
-    $('#ppqSelect').addEventListener('change', event => { const day = getDay(state.selectedDate); if (!canEdit(state.selectedDate)) return; day.ppq = event.target.value; saveState(); renderAll(); });
-    $('#dayTypeSelect').addEventListener('change', event => { const day = getDay(state.selectedDate); if (!canEdit(state.selectedDate)) return; day.dayType = event.target.value; saveState(); renderAll(); });
+    $('#workflowSelect').addEventListener('change', event => {
+      state.lastWorkflow = normalizeWorkflow(event.target.value);
+      saveState('Outcomes workflow saved');
+    });
+    $('#dayTypeSelect').addEventListener('change', event => updateDateStatus(event.target.value));
     $('#addKeysButton').addEventListener('click', addKeyBatch);
     $('#clearKeyInput').addEventListener('click', () => { $('#keyInput').value = ''; $('#keyInput').focus(); });
     $('#keyInput').addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') addKeyBatch(); });
@@ -773,27 +1346,72 @@
     $('#undoTally').addEventListener('click', undoLastTally);
     $('#clearDay').addEventListener('click', clearSelectedDay);
     $('#copyDaySummary').addEventListener('click', copyDaySummary);
+    $('#addNoteButton').addEventListener('click', addNote);
+    $('#noteTextInput').addEventListener('keydown', event => { if (event.key === 'Enter') addNote(); });
+    $('#dailyTimeline').addEventListener('click', event => {
+      const button = event.target.closest('[data-note-delete-id]');
+      if (button) removeNote(button.dataset.noteDeleteId);
+    });
     $('#historyBody').addEventListener('click', event => {
       const button = event.target.closest('[data-delete-id]');
       if (button) removeEntry(button.dataset.deleteId);
     });
     $('#historyBody').addEventListener('change', event => {
-      const select = event.target.closest('[data-outcome-id]');
-      if (select) updateEntryOutcome(select.dataset.outcomeId, select.value);
+      const outcome = event.target.closest('[data-outcome-id]');
+      const workflow = event.target.closest('[data-workflow-id]');
+      if (outcome) updateEntryOutcome(outcome.dataset.outcomeId, outcome.value);
+      if (workflow) updateEntryWorkflow(workflow.dataset.workflowId, workflow.value);
     });
 
-    $('#previousWeek').addEventListener('click', () => { state.weekDate = addDays(state.weekDate || todayISO(), -7); saveState(); renderWeek(); });
-    $('#nextWeek').addEventListener('click', () => { state.weekDate = addDays(state.weekDate || todayISO(), 7); saveState(); renderWeek(); });
-    $('#weekDate').addEventListener('change', event => { if (event.target.value) { state.weekDate = event.target.value; saveState(); renderWeek(); } });
-
+    ['customStart', 'customEnd'].forEach(id => $(`#${id}`).addEventListener('change', () => {
+      state.customStart = $('#customStart').value;
+      state.customEnd = $('#customEnd').value;
+      saveState();
+      renderCustom();
+    }));
     ['dashboardStart', 'dashboardEnd'].forEach(id => $(`#${id}`).addEventListener('change', renderDashboard));
     ['reportStart', 'reportEnd'].forEach(id => $(`#${id}`).addEventListener('change', renderReports));
     $('#exportCsv').addEventListener('click', exportCsv);
     $('#exportExcel').addEventListener('click', exportExcel);
     $('#printReport').addEventListener('click', () => window.print());
 
+    $('#closeSettings').addEventListener('click', closeOverlays);
+    $('#settingsOverlay').addEventListener('click', event => { if (event.target === $('#settingsOverlay')) closeOverlays(); });
     $('#themeSelect').addEventListener('change', event => { state.settings.theme = event.target.value; applySettings(); saveState(); renderAll(); });
     $('#compactMode').addEventListener('change', event => { state.settings.compactDashboard = event.target.checked; saveState(); renderAll(); });
+    $('#automaticTimeZone').addEventListener('change', event => {
+      state.settings.automaticTimeZone = event.target.checked;
+      if (event.target.checked) state.settings.timeZone = detectTimeZone();
+      saveState('Time zone setting saved');
+      applySettings();
+      renderAll();
+    });
+    $('#timeZoneSelect').addEventListener('change', event => {
+      state.settings.timeZone = event.target.value;
+      state.settings.automaticTimeZone = false;
+      saveState('Time zone saved');
+      applySettings();
+      renderAll();
+    });
+    $('#addHolidayButton').addEventListener('click', () => {
+      const date = $('#holidayDateInput').value;
+      if (!date) return toast('Choose a holiday or excluded date.');
+      if (!state.settings.holidays.includes(date)) state.settings.holidays.push(date);
+      state.settings.holidays.sort();
+      $('#holidayDateInput').value = '';
+      saveState('Holiday saved');
+      applySettings();
+      renderAll();
+      toast(`${formatDate(date)} will be excluded from Weekly and Custom Range views.`);
+    });
+    $('#holidayList').addEventListener('click', event => {
+      const button = event.target.closest('[data-remove-holiday]');
+      if (!button) return;
+      state.settings.holidays = state.settings.holidays.filter(date => date !== button.dataset.removeHoliday);
+      saveState('Holiday removed');
+      applySettings();
+      renderAll();
+    });
     $('#downloadBackup').addEventListener('click', downloadBackup);
     $('#importBackupButton').addEventListener('click', () => $('#backupFileInput').click());
     $('#importSpreadsheetButton').addEventListener('click', () => $('#spreadsheetFileInput').click());
@@ -802,7 +1420,7 @@
     $('#resetAllData').addEventListener('click', resetAllData);
 
     $('#skipImport').addEventListener('click', () => { state.welcomeDone = true; saveState(); closeOverlays(); toast('Ready. No file was required.'); });
-    $('#welcomeImport').addEventListener('click', () => { closeOverlays(); openSettings(); setTimeout(() => $('#importSpreadsheetButton').focus(), 50); });
+    $('#welcomeImport').addEventListener('click', () => { closeOverlays(); openSettings('backupSettings'); });
 
     window.addEventListener('beforeinstallprompt', event => {
       event.preventDefault();
@@ -817,17 +1435,27 @@
       $('#installApp').hidden = true;
     });
 
-    document.addEventListener('keydown', event => { if (event.key === 'Escape') closeOverlays(); });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        closeMenu();
+        closeOverlays();
+      }
+    });
   }
 
   function initialize() {
+    ensureTodayModeDefault();
     $('#dashboardStart').value = startOfMonth();
     $('#dashboardEnd').value = endOfMonth();
     $('#reportStart').value = startOfMonth();
     $('#reportEnd').value = endOfMonth();
+    $('#customStart').value = state.customStart || startOfMonth();
+    $('#customEnd').value = state.customEnd || todayISO();
+    $('#noteTimeInput').value = currentTimeValue();
     bindEvents();
     applySettings();
     renderAll();
+    saveState();
     if (!state.welcomeDone) showWelcome();
 
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
