@@ -2,12 +2,22 @@
   'use strict';
 
   const STORAGE_KEY = 'annual-key-tracker-github-v1';
-  const APP_VERSION = 7;
+  const APP_VERSION = 8;
   const THEMES = ['sea-breeze', 'classic-blue', 'sage-stone', 'warm-sand', 'charcoal-gold'];
   const OUTCOMES = ['Contacted', 'Snoozed', 'Unable to Contact'];
   const WORKFLOWS = ['PA PPQ', 'Appeals PPQ'];
   const NON_WORK_STATUSES = ['Scheduled Off', 'PTO', 'Holiday', 'Leave'];
   const NOTE_TYPES = ['Meeting', 'Lunch', 'Training', 'System Issue', 'Coaching', 'Other'];
+  const FIXED_COMPANY_HOLIDAYS = [
+    { date: '2026-01-01', name: "New Year’s Day" },
+    { date: '2026-01-19', name: 'MLK Jr. Day' },
+    { date: '2026-05-25', name: 'Memorial Day' },
+    { date: '2026-07-03', name: 'Independence Day' },
+    { date: '2026-09-07', name: 'Labor Day' },
+    { date: '2026-11-26', name: 'Thanksgiving Day' },
+    { date: '2026-12-25', name: 'Christmas Day' }
+  ];
+  const FIXED_COMPANY_HOLIDAY_DATES = new Set(FIXED_COMPANY_HOLIDAYS.map(item => item.date));
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -184,7 +194,7 @@
       settings.automaticTimeZone = settings.automaticTimeZone !== false;
       settings.timeZone = validTimeZone(settings.timeZone) ? settings.timeZone : detectTimeZone();
       settings.holidays = [...new Set((Array.isArray(settings.holidays) ? settings.holidays : [])
-        .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value)))].sort();
+        .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value) && !FIXED_COMPANY_HOLIDAY_DATES.has(value)))].sort();
       const days = {};
       Object.entries(parsed.days || {}).forEach(([date, day]) => {
         if (/^\d{4}-\d{2}-\d{2}$/.test(date)) days[date] = sanitizeDay(day);
@@ -290,9 +300,15 @@
     return day === 0 || day === 6;
   }
 
-  function holidayDates() {
+  function customHolidayDates() {
     return Array.isArray(state.settings.holidays) ? state.settings.holidays : [];
   }
+
+  function holidayDates() {
+    return [...new Set([...FIXED_COMPANY_HOLIDAYS.map(item => item.date), ...customHolidayDates()])].sort();
+  }
+
+  function isFixedCompanyHoliday(date) { return FIXED_COMPANY_HOLIDAY_DATES.has(date); }
 
   function isSavedHoliday(date) { return holidayDates().includes(date); }
 
@@ -1379,7 +1395,7 @@
       importedSettings.automaticTimeZone = importedSettings.automaticTimeZone !== false;
       importedSettings.timeZone = validTimeZone(importedSettings.timeZone) ? importedSettings.timeZone : detectTimeZone();
       importedSettings.holidays = [...new Set((Array.isArray(importedSettings.holidays) ? importedSettings.holidays : [])
-        .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value)))].sort();
+        .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value) && !FIXED_COMPANY_HOLIDAY_DATES.has(value)))].sort();
       state = {
         ...defaults,
         ...parsed,
@@ -1532,10 +1548,25 @@
   }
 
   function renderHolidayList() {
-    const dates = holidayDates();
-    $('#holidayList').innerHTML = dates.length
-      ? dates.map(date => `<div class="holiday-item"><span>${formatDate(date, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span><button type="button" data-remove-holiday="${date}" aria-label="Remove holiday">×</button></div>`).join('')
-      : '<p class="privacy-note">No holidays or excluded dates have been added.</p>';
+    const customDates = customHolidayDates();
+    const fixedItems = FIXED_COMPANY_HOLIDAYS.map(item => `
+      <div class="holiday-item holiday-item-fixed" title="Company fixed holiday">
+        <span class="holiday-name">${escapeHtml(item.name)}</span>
+        <span>${formatDate(item.date, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span>
+        <span class="fixed-holiday-badge">Fixed</span>
+      </div>`).join('');
+    const customItems = customDates.length
+      ? customDates.map(date => `<div class="holiday-item"><span>${formatDate(date, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span><button type="button" data-remove-holiday="${date}" aria-label="Remove excluded date">×</button></div>`).join('')
+      : '<p class="privacy-note">No additional holidays or excluded dates have been added.</p>';
+    $('#holidayList').innerHTML = `
+      <div class="holiday-list-group">
+        <p class="holiday-list-heading">2026 Company Fixed Holidays</p>
+        <div class="holiday-chip-list">${fixedItems}</div>
+      </div>
+      <div class="holiday-list-group">
+        <p class="holiday-list-heading">Additional Excluded Dates</p>
+        <div class="holiday-chip-list">${customItems}</div>
+      </div>`;
   }
 
   function applySettings() {
@@ -1719,10 +1750,14 @@
     $('#addHolidayButton').addEventListener('click', () => {
       const date = $('#holidayDateInput').value;
       if (!date) return toast('Choose a holiday or excluded date.');
+      if (isFixedCompanyHoliday(date)) {
+        $('#holidayDateInput').value = '';
+        return toast(`${formatDate(date)} is already a company fixed holiday.`);
+      }
       if (!state.settings.holidays.includes(date)) state.settings.holidays.push(date);
       state.settings.holidays.sort();
       $('#holidayDateInput').value = '';
-      saveState('Holiday saved');
+      saveState('Excluded date saved');
       applySettings();
       renderAll();
       toast(`${formatDate(date)} will be excluded from Weekly and Custom Range views.`);

@@ -478,3 +478,12 @@ tr.duplicate-highlight td{animation:duplicatePulse 1s ease-in-out 0s 4;outline:2
 
 /* Version 7: timeline and hourly analysis are separate menu views. */
 .standalone-insight-card{max-width:1500px;margin:0 auto}
+
+/* Version 8: built-in 2026 company fixed holidays. */
+.holiday-list{display:grid;gap:14px}
+.holiday-list-group{display:grid;gap:7px}
+.holiday-list-heading{margin:0;color:var(--muted);font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+.holiday-chip-list{display:flex;flex-wrap:wrap;gap:7px}
+.holiday-item-fixed{border-style:solid;background:var(--panel-strong);cursor:default}
+.holiday-item-fixed .holiday-name{color:var(--text);font-weight:900}
+.fixed-holiday-badge{border-radius:999px;background:var(--accent);color:#fff;padding:2px 6px;font-size:8px;font-weight:900;letter-spacing:.05em;text-transform:uppercase}

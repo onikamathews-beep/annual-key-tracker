@@ -2,6 +2,14 @@
 
 Upload every file in this folder to the root of the existing GitHub repository and allow GitHub to replace files with matching names.
 
+## Version 8 changes
+
+- Adds the seven 2026 company fixed holidays as built-in, nonremovable excluded dates.
+- Uses Friday, July 3, 2026 for Independence Day exactly as listed on the company calendar.
+- Fixed holidays automatically show as Holiday and are excluded from weekly/custom workday calculations.
+- Keeps the option to add and remove separate custom excluded dates in Settings.
+- Updates application and service-worker cache versions to Version 8.
+
 ## Version 7 changes
 
 - Moves **Daily Timeline** out of the Tracker page and into its own left-menu view.

@@ -8,7 +8,7 @@
   <title>Annual Key Tracker</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=7">
+  <link rel="stylesheet" href="styles.css?v=8">
 </head>
 <body>
   <header class="compact-topbar">
@@ -428,10 +428,10 @@
 
         <section class="settings-section">
           <h3>Holidays and Excluded Dates</h3>
-          <p class="subtle">Weekly and Custom Range views always skip weekends and dates saved here.</p>
+          <p class="subtle">The 2026 company fixed holidays are built in and cannot be removed. Weekly and Custom Range views skip weekends, fixed holidays, and any additional dates saved here.</p>
           <div class="holiday-controls">
             <input id="holidayDateInput" type="date">
-            <button class="button button-secondary" id="addHolidayButton" type="button">Add Holiday</button>
+            <button class="button button-secondary" id="addHolidayButton" type="button">Add Excluded Date</button>
           </div>
           <div class="holiday-list" id="holidayList"></div>
         </section>
@@ -455,7 +455,7 @@
             <button class="button button-danger" id="resetAllData" type="button">Reset All Data</button>
           </div>
           <p class="privacy-note">Data stays in this browser unless you download or import a file. The GitHub website does not receive your saved entries.</p>
-          <p class="version-note">Annual Key Tracker version 7</p>
+          <p class="version-note">Annual Key Tracker version 8</p>
         </section>
       </div>
     </section>
@@ -492,6 +492,6 @@
 
   <div class="toast-region" id="toastRegion" aria-live="polite"></div>
 
-  <script src="app.js?v=7"></script>
+  <script src="app.js?v=8"></script>
 </body>
 </html>
