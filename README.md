@@ -1,4 +1,4 @@
-# Annual Key Tracker — Update v5
+# Annual Key Tracker — Update v6
 
 Upload every file in this folder to the root of your existing GitHub repository. Allow GitHub to replace the files with the same names.
 
@@ -28,9 +28,13 @@ Upload every file in this folder to the root of your existing GitHub repository.
 The service-worker cache name was updated so the new layout should replace the older cached version. Tracker data remains in the browser’s local storage.
 
 
-## Version 5 changes
+## Version 6 changes
 
-- Every pasted key now counts as one interaction.
+- Every pasted key counts as one interaction, including legacy and imported records that previously stored several keys in one field.
 - Keys submitted together remain visually grouped and share one timestamp.
-- Each key appears on its own row so its Outcomes workflow and Result can be edited independently.
+- Each key appears on its own Activity History row and its own timeline line so its Outcomes workflow and Result remain independent.
 - Duplicate keys are no longer silently removed. A warning offers Add Anyway, Skip Duplicates, View Existing, or Cancel.
+
+- Every new calendar day starts with neither Key Tracker nor Tally Counter selected; the prior day’s method is not carried forward.
+- Spreadsheet imports immediately create one stored interaction per key instead of a combined record.
+- Versioned asset URLs and the version 6 service-worker cache force GitHub Pages to load the corrected files instead of an older cached build.

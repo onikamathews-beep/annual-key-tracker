@@ -465,3 +465,13 @@ tr.duplicate-highlight td{animation:duplicatePulse 1s ease-in-out 0s 4;outline:2
   .sticky-tally-buttons button{min-height:31px}
 }
 @media print{.sticky-workbench{display:none!important}}
+
+
+/* Version 6: keep every pasted key visibly separate while preserving its submission group. */
+.timeline-detail-html{display:grid;gap:5px;margin-top:5px}
+.timeline-group-summary{color:var(--muted);font-size:10px;font-weight:750}
+.timeline-key-line{display:grid;grid-template-columns:minmax(110px,auto) 1fr;gap:9px;align-items:center;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2)}
+.timeline-key-line strong{overflow-wrap:anywhere;color:var(--text)}
+.timeline-key-line span{font-size:10px;color:var(--muted)}
+.version-note{margin:10px 0 0;color:var(--muted);font-size:10px;font-weight:800;text-align:right}
+@media(max-width:620px){.timeline-key-line{grid-template-columns:1fr;gap:2px}}

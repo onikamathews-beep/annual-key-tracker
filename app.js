@@ -2,7 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'annual-key-tracker-github-v1';
-  const APP_VERSION = 5;
+  const APP_VERSION = 6;
   const THEMES = ['sea-breeze', 'classic-blue', 'sage-stone', 'warm-sand', 'charcoal-gold'];
   const OUTCOMES = ['Contacted', 'Snoozed', 'Unable to Contact'];
   const WORKFLOWS = ['PA PPQ', 'Appeals PPQ'];
@@ -103,6 +103,17 @@
     return null;
   }
 
+  function keysFromEntry(entry) {
+    const rawValues = [];
+    if (Array.isArray(entry?.keys)) rawValues.push(...entry.keys);
+    else if (entry?.keys != null) rawValues.push(entry.keys);
+    if (entry?.key != null) rawValues.push(entry.key);
+    if (entry?.keyId != null) rawValues.push(entry.keyId);
+    if (entry?.['key id'] != null) rawValues.push(entry['key id']);
+    if (!rawValues.length && entry?.activity != null) rawValues.push(entry.activity);
+    return rawValues.flatMap(value => keyTokens(value));
+  }
+
   function sanitizeDay(day) {
     const source = day && typeof day === 'object' ? day : {};
     const fallbackWorkflow = normalizeWorkflow(source.workflow || source.ppq);
@@ -112,8 +123,9 @@
       ? clean.statusOverride
       : NON_WORK_STATUSES.includes(source.dayType) ? source.dayType : '';
     clean.entries = Array.isArray(source.entries) ? source.entries.flatMap((entry, index) => {
-      const type = normalizeMode(entry.type || source.mode) || 'tally';
-      const keys = Array.isArray(entry.keys) ? entry.keys.map(value => String(value).trim()).filter(Boolean) : [];
+      const inferredKeys = keysFromEntry(entry);
+      const type = normalizeMode(entry.type || source.mode) || (inferredKeys.length ? 'keys' : 'tally');
+      const keys = type === 'keys' ? inferredKeys : [];
       const groupIndex = Number.isFinite(Number(entry.groupIndex)) ? Number(entry.groupIndex) : index % 5;
       const groupId = entry.groupId || entry.submissionId || entry.id || createId('group');
       const common = {
@@ -310,15 +322,10 @@
   }
 
   function ensureTodayModeDefault() {
-    const date = todayISO();
-    const day = getDay(date);
-    if (!day.mode && !day.entries.length) {
-      const previous = previousModeBefore(date);
-      if (previous) {
-        day.mode = previous;
-        day.modeInherited = true;
-        day.modeLocked = false;
-      }
+    const day = getDay(todayISO());
+    if (!day.entries.length && !day.modeLocked) {
+      day.mode = null;
+      day.modeInherited = false;
     }
   }
 
@@ -855,9 +862,7 @@
     $('#modeChooser').classList.toggle('hidden', !chooserVisible);
     $('#keyModeButton').classList.toggle('active', day.mode === 'keys');
     $('#tallyModeButton').classList.toggle('active', day.mode === 'tally');
-    $('#modeChooserHelp').textContent = day.modeInherited && day.mode
-      ? `Continue with the previous workday’s choice or switch before the first entry.`
-      : 'Choose a method to begin. There is no separate confirmation button.';
+    $('#modeChooserHelp').textContent = 'Choose once at the beginning of the shift. Each new day starts unselected.';
 
     $('#workflowSelect').value = state.lastWorkflow || '';
     $('#workflowSelect').disabled = !editable;
@@ -884,7 +889,7 @@
 
     if (!editable) $('#entryNotice').textContent = 'Activity is read-only for this date. Use Date Status above to record Scheduled Off, PTO, Holiday, or Leave.';
     else if (!day.mode) $('#entryNotice').textContent = 'Select Key Tracker or Tally Counter. No file is required.';
-    else if (!day.modeLocked) $('#entryNotice').textContent = 'The previous workday’s method is ready. Enter activity to continue with it, or switch methods before the first entry.';
+    else if (!day.modeLocked) $('#entryNotice').textContent = 'Choose Key Tracker or Tally Counter once for today before recording activity.';
     else if (day.mode === 'keys') $('#entryNotice').textContent = `Each key counts as one interaction. Keys submitted together share one timestamp in ${activeTimeZone()} and save automatically.`;
     else $('#entryNotice').textContent = 'Tally additions save automatically without individual timestamps.';
 
@@ -1018,13 +1023,20 @@
         .map(outcome => `${outcomeCounts[outcome]} ${outcome}`).join(' · ');
       const workflowDetail = [...WORKFLOWS, 'Not selected'].filter(workflow => workflowCounts[workflow] > 0)
         .map(workflow => `${workflowCounts[workflow]} ${workflow}`).join(' · ');
+      const keyLines = entries.map(entry => {
+        const key = (entry.keys || [])[0] || '';
+        const workflow = normalizeWorkflow(entry.workflow) || 'Not selected';
+        const outcome = normalizeOutcome(entry.outcome);
+        return `<div class="timeline-key-line"><strong>${escapeHtml(key)}</strong><span>${escapeHtml(workflow)} · ${escapeHtml(outcome)}</span></div>`;
+      }).join('');
       events.push({
         sort: parts.hour * 60 + parts.minute,
         kind: 'entry',
         id: first.groupId || first.id,
         time: formatClockTime(first.time, entryZone),
         label: `${keys.length} interaction${keys.length === 1 ? '' : 's'}`,
-        detail: `${workflowDetail} · ${outcomeDetail} · ${keys.join(', ')}`,
+        detail: `<div class="timeline-group-summary">${escapeHtml(workflowDetail)} · ${escapeHtml(outcomeDetail)}</div>${keyLines}`,
+        detailIsHtml: true,
         zone: entryZone
       });
     });
@@ -1047,7 +1059,7 @@
     $('#dailyTimeline').innerHTML = tallyMessage + (events.length ? events.map(event => `<div class="timeline-item ${event.kind}">
       <div class="timeline-time">${escapeHtml(event.time)}</div>
       <div class="timeline-dot" aria-hidden="true"></div>
-      <div class="timeline-content"><strong>${escapeHtml(event.label)}</strong><span>${escapeHtml(event.detail)}</span>${event.zone !== zone ? `<small>${escapeHtml(event.zone)}</small>` : ''}</div>
+      <div class="timeline-content"><strong>${escapeHtml(event.label)}</strong>${event.detailIsHtml ? `<div class="timeline-detail-html">${event.detail}</div>` : `<span>${escapeHtml(event.detail)}</span>`}${event.zone !== zone ? `<small>${escapeHtml(event.zone)}</small>` : ''}</div>
       ${event.kind === 'note' ? `<button class="timeline-remove" data-note-delete-id="${event.id}" type="button" ${editable ? '' : 'disabled'} aria-label="Remove note">×</button>` : ''}
     </div>`).join('') : '<div class="empty-timeline">No timestamped key groups or notes are available for this date.</div>');
   }
@@ -1390,23 +1402,39 @@
           if (!day.mode) day.mode = resolvedMode;
           day.modeLocked = true;
           day.modeInherited = false;
-          const entryCount = resolvedMode === 'keys' ? Math.max(1, keys.length) : count;
+          const entryCount = resolvedMode === 'keys' ? keys.length : count;
           if (entryCount < 1) { skipped += 1; return; }
-          const entry = {
-            id: createId('import'),
-            type: resolvedMode,
-            keys: resolvedMode === 'keys' ? keys : [],
-            count: entryCount,
-            outcome,
-            workflow,
-            groupIndex: day.entries.length % 5,
-            importedFrom: file.name
-          };
+          const groupId = createId('group');
+          const groupIndex = nextGroupIndex(day);
           if (resolvedMode === 'keys') {
-            entry.timeZone = validTimeZone(normalized['time zone'] || normalized.timezone) ? (normalized['time zone'] || normalized.timezone) : activeTimeZone();
-            entry.time = safeImportedTime(date, normalized.time);
+            const timeZone = validTimeZone(normalized['time zone'] || normalized.timezone) ? (normalized['time zone'] || normalized.timezone) : activeTimeZone();
+            const time = safeImportedTime(date, normalized.time);
+            keys.forEach(key => day.entries.push({
+              id: createId('import-key'),
+              type: 'keys',
+              keys: [key],
+              count: 1,
+              outcome,
+              workflow,
+              groupId,
+              groupIndex,
+              timeZone,
+              time,
+              importedFrom: file.name
+            }));
+          } else {
+            day.entries.push({
+              id: createId('import-tally'),
+              type: 'tally',
+              keys: [],
+              count: entryCount,
+              outcome,
+              workflow,
+              groupId,
+              groupIndex,
+              importedFrom: file.name
+            });
           }
-          day.entries.push(entry);
           if (workflow) state.lastWorkflow = workflow;
           state.lastMode = resolvedMode;
           imported += 1;

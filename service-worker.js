@@ -1,9 +1,9 @@
-const CACHE_NAME = 'annual-key-tracker-v5';
+const CACHE_NAME = 'annual-key-tracker-v6';
 const LOCAL_ASSETS = [
   './',
   './index.html',
-  './styles.css',
-  './app.js',
+  './styles.css?v=6',
+  './app.js?v=6',
   './manifest.webmanifest',
   './icon-192.png',
   './icon-512.png'
@@ -33,6 +33,6 @@ self.addEventListener('fetch', event => {
         caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
         return response;
       })
-      .catch(() => caches.match(event.request).then(cached => cached || caches.match('./index.html')))
+      .catch(() => caches.match(event.request, { ignoreSearch: true }).then(cached => cached || caches.match('./index.html')))
   );
 });
