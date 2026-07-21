@@ -8,7 +8,7 @@
   <title>Annual Key Tracker</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=6">
+  <link rel="stylesheet" href="styles.css?v=7">
 </head>
 <body>
   <header class="compact-topbar">
@@ -106,6 +106,8 @@
     </div>
     <nav class="menu-list">
       <button type="button" data-menu-view="today">Tracker</button>
+      <button type="button" data-menu-view="timeline">Daily Timeline</button>
+      <button type="button" data-menu-view="hourly">Interactions Recorded by Hour</button>
       <button type="button" data-menu-view="custom">Custom Range</button>
       <button type="button" data-menu-view="dashboard">Dashboard</button>
       <button type="button" data-menu-view="reports">Reports</button>
@@ -256,53 +258,56 @@
         </div>
       </section>
 
-      <div class="today-insights">
-        <section class="card timeline-card">
-          <div class="section-heading compact">
-            <div>
-              <p class="eyebrow">Timestamped activity</p>
-              <h2>Daily Timeline</h2>
-              <p class="subtle" id="timelineTimeZone"></p>
-            </div>
-          </div>
+    </section>
 
-          <div class="note-form" id="noteForm">
-            <label class="field">
-              <span>Note type</span>
-              <select id="noteTypeSelect">
-                <option>Meeting</option>
-                <option>Lunch</option>
-                <option>Training</option>
-                <option>System Issue</option>
-                <option>Coaching</option>
-                <option>Other</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Time</span>
-              <input id="noteTimeInput" type="time">
-            </label>
-            <label class="field note-text-field">
-              <span>Optional details</span>
-              <input id="noteTextInput" type="text" maxlength="160" placeholder="Example: Team meeting until 9:45 AM">
-            </label>
-            <button class="button button-secondary" id="addNoteButton" type="button">Add Note</button>
+    <section class="view" id="view-timeline">
+      <section class="card timeline-card standalone-insight-card">
+        <div class="section-heading compact">
+          <div>
+            <p class="eyebrow">Timestamped activity</p>
+            <h2>Daily Timeline</h2>
+            <p class="subtle" id="timelineTimeZone"></p>
           </div>
-          <div class="timeline-list" id="dailyTimeline"></div>
-        </section>
+        </div>
 
-        <section class="card hourly-card">
-          <div class="section-heading compact">
-            <div>
-              <p class="eyebrow">Key Tracker only</p>
-              <h2>Interactions Recorded by Hour</h2>
-              <p class="subtle" id="hourlyTimeZone"></p>
-            </div>
+        <div class="note-form" id="noteForm">
+          <label class="field">
+            <span>Note type</span>
+            <select id="noteTypeSelect">
+              <option>Meeting</option>
+              <option>Lunch</option>
+              <option>Training</option>
+              <option>System Issue</option>
+              <option>Coaching</option>
+              <option>Other</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Time</span>
+            <input id="noteTimeInput" type="time">
+          </label>
+          <label class="field note-text-field">
+            <span>Optional details</span>
+            <input id="noteTextInput" type="text" maxlength="160" placeholder="Example: Team meeting until 9:45 AM">
+          </label>
+          <button class="button button-secondary" id="addNoteButton" type="button">Add Note</button>
+        </div>
+        <div class="timeline-list" id="dailyTimeline"></div>
+      </section>
+    </section>
+
+    <section class="view" id="view-hourly">
+      <section class="card hourly-card standalone-insight-card">
+        <div class="section-heading compact">
+          <div>
+            <p class="eyebrow">Key Tracker only</p>
+            <h2>Interactions Recorded by Hour</h2>
+            <p class="subtle" id="hourlyTimeZone"></p>
           </div>
-          <div class="hourly-chart" id="hourlyChart"></div>
-          <p class="privacy-note" id="hourlyChartNote">Each key counts as one interaction. Keys submitted together share one timestamp. Meetings, lunches, and other work may affect the pattern.</p>
-        </section>
-      </div>
+        </div>
+        <div class="hourly-chart" id="hourlyChart"></div>
+        <p class="privacy-note" id="hourlyChartNote">Each key counts as one interaction. Keys submitted together share one timestamp. Meetings, lunches, and other work may affect the pattern.</p>
+      </section>
     </section>
 
     <section class="view" id="view-week">
@@ -450,7 +455,7 @@
             <button class="button button-danger" id="resetAllData" type="button">Reset All Data</button>
           </div>
           <p class="privacy-note">Data stays in this browser unless you download or import a file. The GitHub website does not receive your saved entries.</p>
-          <p class="version-note">Annual Key Tracker version 6</p>
+          <p class="version-note">Annual Key Tracker version 7</p>
         </section>
       </div>
     </section>
@@ -487,6 +492,6 @@
 
   <div class="toast-region" id="toastRegion" aria-live="polite"></div>
 
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>

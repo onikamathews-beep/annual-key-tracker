@@ -2,7 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'annual-key-tracker-github-v1';
-  const APP_VERSION = 6;
+  const APP_VERSION = 7;
   const THEMES = ['sea-breeze', 'classic-blue', 'sage-stone', 'warm-sand', 'charcoal-gold'];
   const OUTCOMES = ['Contacted', 'Snoozed', 'Unable to Contact'];
   const WORKFLOWS = ['PA PPQ', 'Appeals PPQ'];
@@ -794,7 +794,9 @@
   function switchView(view) {
     activeView = view;
     $$('.view').forEach(section => section.classList.toggle('active', section.id === `view-${view}`));
-    $('#mainPeriodControls').classList.toggle('hidden', !['today', 'week'].includes(view));
+    const dateViews = ['today', 'week', 'timeline', 'hourly'];
+    $('#mainPeriodControls').classList.toggle('hidden', !dateViews.includes(view));
+    $('#mainViewSelect').classList.toggle('hidden', !['today', 'week'].includes(view));
     if (view === 'today' || view === 'week') $('#mainViewSelect').value = view;
     closeMenu();
     renderAll();
@@ -817,10 +819,11 @@
   }
 
   function renderPeriodControls() {
-    if (!['today', 'week'].includes(activeView)) return;
+    if (!['today', 'week', 'timeline', 'hourly'].includes(activeView)) return;
     const anchor = periodAnchor();
     $('#selectedDate').value = anchor;
-    $('#mainViewSelect').value = activeView;
+    $('#mainViewSelect').classList.toggle('hidden', !['today', 'week'].includes(activeView));
+    if (activeView === 'today' || activeView === 'week') $('#mainViewSelect').value = activeView;
     $('#dateDisplayButton').textContent = activeView === 'week'
       ? weekRangeLabel(anchor)
       : isToday(anchor)
@@ -894,13 +897,11 @@
     else $('#entryNotice').textContent = 'Tally additions save automatically without individual timestamps.';
 
     renderHistory(day, editable);
-    renderDailyTimeline(day, editable);
-    renderHourlyChart(day);
   }
 
   function shouldShowStickyWorkbench() {
-    if (!['today', 'week'].includes(activeView)) return false;
-    if (activeView === 'week') return true;
+    if (!['today', 'week', 'timeline', 'hourly'].includes(activeView)) return false;
+    if (['week', 'timeline', 'hourly'].includes(activeView)) return true;
     if (!isToday(state.selectedDate)) return true;
     return window.scrollY > 220;
   }
@@ -961,13 +962,29 @@
     }).join('');
   }
 
+  function entriesNewestFirst(entries) {
+    const groups = [];
+    const groupMap = new Map();
+    entries.forEach((entry, index) => {
+      const groupId = entry.groupId || entry.id;
+      if (!groupMap.has(groupId)) {
+        const group = { groupId, entries: [], order: index };
+        groupMap.set(groupId, group);
+        groups.push(group);
+      }
+      groupMap.get(groupId).entries.push(entry);
+    });
+    return groups.reverse().flatMap(group => group.entries);
+  }
+
   function renderHistory(day, editable) {
     const body = $('#historyBody');
     if (!day.entries.length) {
       body.innerHTML = '<tr><td class="empty-row" colspan="5">No activity has been recorded for this date.</td></tr>';
       return;
     }
-    body.innerHTML = day.entries.map((entry, index) => {
+    const displayEntries = entriesNewestFirst(day.entries);
+    body.innerHTML = displayEntries.map((entry, index) => {
       const description = entry.type === 'keys' ? ((entry.keys || [])[0] || '') : `× ${entryInteractions(entry)}`;
       const time = entry.type === 'keys' && entry.time
         ? formatClockTime(entry.time, entry.timeZone || activeTimeZone())
@@ -975,8 +992,8 @@
       const outcomeOptions = OUTCOMES.map(outcome => `<option${normalizeOutcome(entry.outcome) === outcome ? ' selected' : ''}>${outcome}</option>`).join('');
       const workflowOptions = ['', ...WORKFLOWS].map(workflow => `<option value="${escapeHtml(workflow)}"${normalizeWorkflow(entry.workflow) === workflow ? ' selected' : ''}>${workflow || 'Not selected'}</option>`).join('');
       const groupId = entry.groupId || entry.id;
-      const previousGroupId = index > 0 ? (day.entries[index - 1].groupId || day.entries[index - 1].id) : '';
-      const nextGroupId = index < day.entries.length - 1 ? (day.entries[index + 1].groupId || day.entries[index + 1].id) : '';
+      const previousGroupId = index > 0 ? (displayEntries[index - 1].groupId || displayEntries[index - 1].id) : '';
+      const nextGroupId = index < displayEntries.length - 1 ? (displayEntries[index + 1].groupId || displayEntries[index + 1].id) : '';
       const groupClasses = [
         `group-${Number(entry.groupIndex ?? index) % 5}`,
         groupId !== previousGroupId ? 'group-start' : '',
@@ -1001,13 +1018,16 @@
     const events = [];
     const groups = new Map();
 
-    keyEntries.forEach(entry => {
+    keyEntries.forEach((entry, index) => {
       const groupId = entry.groupId || entry.id;
-      if (!groups.has(groupId)) groups.set(groupId, []);
-      groups.get(groupId).push(entry);
+      if (!groups.has(groupId)) groups.set(groupId, { entries: [], order: index });
+      const group = groups.get(groupId);
+      group.entries.push(entry);
+      group.order = index;
     });
 
-    groups.forEach(entries => {
+    groups.forEach(group => {
+      const entries = group.entries;
       const first = entries[0];
       const entryZone = first.timeZone || zone;
       const parts = timeParts(first.time, entryZone);
@@ -1031,6 +1051,7 @@
       }).join('');
       events.push({
         sort: parts.hour * 60 + parts.minute,
+        order: group.order,
         kind: 'entry',
         id: first.groupId || first.id,
         time: formatClockTime(first.time, entryZone),
@@ -1041,11 +1062,12 @@
       });
     });
 
-    day.notes.forEach(note => {
+    day.notes.forEach((note, noteIndex) => {
       const localTime = /^\d{2}:\d{2}$/.test(note.localTime || '') ? note.localTime : '12:00';
       const [hour, minute] = localTime.split(':').map(Number);
       events.push({
         sort: hour * 60 + minute,
+        order: keyEntries.length + noteIndex,
         kind: 'note',
         id: note.id,
         time: formatClockTime(localTime),
@@ -1054,7 +1076,7 @@
         zone: note.timeZone || zone
       });
     });
-    events.sort((a, b) => a.sort - b.sort || a.kind.localeCompare(b.kind));
+    events.sort((a, b) => b.sort - a.sort || (b.order || 0) - (a.order || 0) || a.kind.localeCompare(b.kind));
     const tallyMessage = day.mode === 'tally' ? '<div class="timeline-info">Tally additions are not timestamped. Notes still appear on the timeline.</div>' : '';
     $('#dailyTimeline').innerHTML = tallyMessage + (events.length ? events.map(event => `<div class="timeline-item ${event.kind}">
       <div class="timeline-time">${escapeHtml(event.time)}</div>
@@ -1102,6 +1124,21 @@
     }
     chart.innerHTML = rows.join('');
     $('#hourlyChartNote').textContent = 'Each key counts as one interaction. Keys submitted together share one timestamp. Meetings, lunches, and other work may affect the pattern.';
+  }
+
+  function renderTimelineView() {
+    const date = state.selectedDate;
+    const day = getDay(date);
+    const editable = canEditActivity(date);
+    $('#noteTypeSelect').disabled = !editable;
+    $('#noteTimeInput').disabled = !editable;
+    $('#noteTextInput').disabled = !editable;
+    $('#addNoteButton').disabled = !editable;
+    renderDailyTimeline(day, editable);
+  }
+
+  function renderHourlyView() {
+    renderHourlyChart(getDay(state.selectedDate));
   }
 
   function summarizeRange(dates) {
@@ -1526,6 +1563,8 @@
     renderPeriodControls();
     renderStickyWorkbench();
     if (activeView === 'today') renderToday();
+    if (activeView === 'timeline') renderTimelineView();
+    if (activeView === 'hourly') renderHourlyView();
     if (activeView === 'week') renderWeek();
     if (activeView === 'custom') renderCustom();
     if (activeView === 'dashboard') renderDashboard();
