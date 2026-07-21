@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#173f67">
+  <meta name="description" content="Local-only annual key tracker and tally counter.">
+  <title>Annual Key Tracker</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">KT</div>
+          <div>
+            <h1>Annual Key Tracker</h1>
+            <p>Key tracking and tally counting in one private, local app</p>
+          </div>
+        </div>
+        <div class="top-actions">
+          <span class="save-status" id="saveStatus">Saved locally</span>
+          <button class="icon-button" id="settingsButton" type="button" aria-label="Open settings">⚙</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="main">
+      <nav class="nav-tabs" aria-label="Tracker views">
+        <button class="nav-tab active" data-view="today" type="button">Today</button>
+        <button class="nav-tab" data-view="week" type="button">Week View</button>
+        <button class="nav-tab" data-view="dashboard" type="button">Dashboard</button>
+        <button class="nav-tab" data-view="reports" type="button">Reports</button>
+      </nav>
+
+      <section class="view active" id="view-today">
+        <div class="toolbar">
+          <div class="date-control">
+            <button id="previousDay" type="button" aria-label="Previous day">‹</button>
+            <input id="selectedDate" type="date">
+            <button id="nextDay" type="button" aria-label="Next day">›</button>
+          </div>
+          <div class="toolbar-actions">
+            <span class="date-badge" id="dateBadge"></span>
+            <button class="button button-secondary" id="goToday" type="button">Go to Today</button>
+          </div>
+        </div>
+
+        <section class="card mode-card">
+          <div>
+            <p class="eyebrow">Beginning of shift</p>
+            <h2>Choose today’s tracking method</h2>
+            <p class="subtle" id="modeHelp">Choose once for this workday. Tomorrow starts unselected.</p>
+          </div>
+          <div class="mode-toggle" role="group" aria-label="Tracking method">
+            <button class="mode-button" id="keyModeButton" type="button">Key Tracker</button>
+            <button class="mode-button" id="tallyModeButton" type="button">Tally Counter</button>
+          </div>
+          <div class="lock-pill" id="modeLockPill">Choose once today</div>
+        </section>
+
+        <div class="today-layout">
+          <section class="card entry-card">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow" id="entryEyebrow">Activity entry</p>
+                <h2 id="entryTitle">Choose a tracking method</h2>
+                <p class="subtle" id="entrySubtitle">Your choice applies only to the selected date.</p>
+              </div>
+              <span class="status-chip" id="dayStatusChip">Work Day</span>
+            </div>
+
+            <div class="entry-settings">
+              <label class="field">
+                <span>PPQ</span>
+                <select id="ppqSelect">
+                  <option value="">Not selected</option>
+                  <option>PPQ 1</option>
+                  <option>PPQ 2</option>
+                  <option>PPQ 3</option>
+                  <option>PPQ 4</option>
+                  <option>PPQ 5</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Day status</span>
+                <select id="dayTypeSelect">
+                  <option>Work Day</option>
+                  <option>Scheduled Off</option>
+                  <option>PTO</option>
+                  <option>Holiday</option>
+                  <option>Leave</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Outcome for this entry</span>
+                <select id="outcomeSelect">
+                  <option>Contacted</option>
+                  <option>Snoozed</option>
+                  <option>Unable to Contact</option>
+                </select>
+              </label>
+            </div>
+
+            <div id="unselectedArea" class="empty-state">
+              <strong>Select Key Tracker or Tally Counter above.</strong>
+              <span>No spreadsheet is required to begin.</span>
+            </div>
+
+            <div id="keyEntryArea" class="entry-area hidden">
+              <label class="field">
+                <span>Paste or type keys</span>
+                <textarea id="keyInput" placeholder="Paste one key per line, or separate keys with commas, spaces, or tabs."></textarea>
+              </label>
+              <p class="helper">Keys pasted together stay grouped as one interaction and share the same color.</p>
+              <div class="entry-actions">
+                <button class="button button-secondary" id="clearKeyInput" type="button">Clear</button>
+                <button class="button button-primary" id="addKeysButton" type="button">Add Keys</button>
+              </div>
+            </div>
+
+            <div id="tallyEntryArea" class="entry-area hidden">
+              <div class="tally-panel">
+                <div>
+                  <p class="eyebrow">Current total</p>
+                  <div class="tally-total" id="tallyTotal">0</div>
+                </div>
+                <div class="quick-tally" aria-label="Quick tally buttons">
+                  <button type="button" data-tally="1">+1</button>
+                  <button type="button" data-tally="2">+2</button>
+                  <button type="button" data-tally="3">+3</button>
+                  <button type="button" data-tally="4">+4</button>
+                  <button type="button" data-tally="5">+5</button>
+                </div>
+                <div class="custom-tally">
+                  <input id="customTallyInput" type="number" min="1" step="1" inputmode="numeric" placeholder="Enter any number">
+                  <button class="button button-primary" id="addCustomTally" type="button">Add × Number</button>
+                </div>
+                <button class="button button-secondary" id="undoTally" type="button">Undo last tally batch</button>
+              </div>
+            </div>
+
+            <div class="notice" id="entryNotice">Select a tracking method before entering activity.</div>
+          </section>
+
+          <aside class="card summary-card">
+            <div class="section-heading compact">
+              <div>
+                <p class="eyebrow">Selected date</p>
+                <h2>Daily summary</h2>
+              </div>
+            </div>
+            <div class="metric-grid">
+              <div class="metric"><span>Total keys</span><strong id="dailyTotalMetric">0</strong></div>
+              <div class="metric"><span>Interactions</span><strong id="dailyInteractionMetric">0</strong></div>
+              <div class="metric"><span>Contacted</span><strong id="dailyContactedMetric">0</strong></div>
+              <div class="metric"><span>Snoozed</span><strong id="dailySnoozedMetric">0</strong></div>
+              <div class="metric wide"><span>Unable to Contact</span><strong id="dailyUnableMetric">0</strong></div>
+            </div>
+            <div class="summary-breakdown" id="dailyBreakdown"></div>
+          </aside>
+        </div>
+
+        <section class="card history-card">
+          <div class="section-heading history-heading">
+            <div>
+              <p class="eyebrow">Activity history</p>
+              <h2>Entries for this date</h2>
+            </div>
+            <div class="history-actions">
+              <button class="button button-secondary" id="copyDaySummary" type="button">Copy Summary</button>
+              <button class="button button-danger" id="clearDay" type="button">Clear Day</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Type</th>
+                  <th>Keys / Count</th>
+                  <th>Outcome</th>
+                  <th>Group</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="historyBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="view" id="view-week">
+        <div class="view-heading">
+          <div>
+            <p class="eyebrow">Monday through Sunday</p>
+            <h2>Week View</h2>
+          </div>
+          <div class="week-controls">
+            <button class="button button-secondary" id="previousWeek" type="button">Previous</button>
+            <input id="weekDate" type="date">
+            <button class="button button-secondary" id="nextWeek" type="button">Next</button>
+          </div>
+        </div>
+        <div class="week-grid" id="weekGrid"></div>
+      </section>
+
+      <section class="view" id="view-dashboard">
+        <div class="view-heading">
+          <div>
+            <p class="eyebrow">Performance overview</p>
+            <h2>Dashboard</h2>
+          </div>
+          <div class="range-controls">
+            <label>From <input id="dashboardStart" type="date"></label>
+            <label>To <input id="dashboardEnd" type="date"></label>
+          </div>
+        </div>
+        <div class="dashboard-grid">
+          <section class="card dashboard-metrics" id="dashboardMetrics"></section>
+          <section class="card chart-card">
+            <div class="section-heading compact"><div><p class="eyebrow">Outcome mix</p><h2>Results</h2></div></div>
+            <div class="bar-chart" id="outcomeChart"></div>
+          </section>
+          <section class="card chart-card full-span">
+            <div class="section-heading compact"><div><p class="eyebrow">Daily activity</p><h2>Keys by day</h2></div></div>
+            <div class="daily-chart" id="dailyChart"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view" id="view-reports">
+        <div class="view-heading">
+          <div>
+            <p class="eyebrow">Export and review</p>
+            <h2>Reports</h2>
+          </div>
+          <div class="range-controls">
+            <label>From <input id="reportStart" type="date"></label>
+            <label>To <input id="reportEnd" type="date"></label>
+          </div>
+        </div>
+        <section class="card report-card">
+          <div class="report-actions">
+            <button class="button button-primary" id="exportExcel" type="button">Export Excel</button>
+            <button class="button button-secondary" id="exportCsv" type="button">Export CSV</button>
+            <button class="button button-secondary" id="printReport" type="button">Print</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Method</th>
+                  <th>PPQ</th>
+                  <th>Status</th>
+                  <th>Total</th>
+                  <th>Interactions</th>
+                  <th>Contacted</th>
+                  <th>Snoozed</th>
+                  <th>Unable</th>
+                </tr>
+              </thead>
+              <tbody id="reportBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <div class="overlay" id="settingsOverlay" aria-hidden="true">
+    <section class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <header class="settings-header">
+        <div><p class="eyebrow">App controls</p><h2 id="settingsTitle">Settings</h2></div>
+        <button class="icon-button light" id="closeSettings" type="button" aria-label="Close settings">×</button>
+      </header>
+      <div class="settings-body">
+        <section class="settings-section">
+          <h3>Appearance</h3>
+          <label class="field"><span>Color theme</span>
+            <select id="themeSelect">
+              <option value="sea-breeze">Sea Breeze</option>
+              <option value="classic-blue">Classic Blue</option>
+              <option value="sage-stone">Sage & Stone</option>
+              <option value="warm-sand">Warm Sand</option>
+              <option value="charcoal-gold">Charcoal & Gold</option>
+            </select>
+          </label>
+          <label class="checkbox-row"><input id="compactMode" type="checkbox"> Use compact dashboard cards</label>
+        </section>
+
+        <section class="settings-section">
+          <h3>Import previous tracker data</h3>
+          <p class="subtle">Import a JSON backup or an Excel/CSV tracker file. Importing is optional.</p>
+          <div class="settings-buttons">
+            <button class="button button-secondary" id="importBackupButton" type="button">Import JSON Backup</button>
+            <button class="button button-secondary" id="importSpreadsheetButton" type="button">Import Excel or CSV</button>
+          </div>
+          <input class="hidden" id="backupFileInput" type="file" accept=".json,application/json">
+          <input class="hidden" id="spreadsheetFileInput" type="file" accept=".xlsx,.xls,.csv,.html,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+        </section>
+
+        <section class="settings-section">
+          <h3>Backup and data</h3>
+          <div class="settings-buttons">
+            <button class="button button-primary" id="downloadBackup" type="button">Download Backup</button>
+            <button class="button button-secondary" id="installApp" type="button" hidden>Install App</button>
+            <button class="button button-danger" id="resetAllData" type="button">Reset All Data</button>
+          </div>
+          <p class="privacy-note">Data stays in this browser unless you download or import a file. The GitHub website does not receive your saved entries.</p>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <div class="overlay" id="welcomeOverlay" aria-hidden="true">
+    <section class="welcome-panel" role="dialog" aria-modal="true" aria-labelledby="welcomeTitle">
+      <p class="eyebrow">First-time setup</p>
+      <h2 id="welcomeTitle">Start fresh or bring previous data</h2>
+      <p>This step is optional. You can begin tracking without uploading any file.</p>
+      <div class="welcome-actions">
+        <button class="button button-primary" id="skipImport" type="button">Start Without a File</button>
+        <button class="button button-secondary" id="welcomeImport" type="button">Import Previous Data</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
