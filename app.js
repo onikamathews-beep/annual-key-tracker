@@ -2,7 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'annual-key-tracker-github-v1';
-  const APP_VERSION = 3;
+  const APP_VERSION = 4;
   const THEMES = ['sea-breeze', 'classic-blue', 'sage-stone', 'warm-sand', 'charcoal-gold'];
   const OUTCOMES = ['Contacted', 'Snoozed', 'Unable to Contact'];
   const WORKFLOWS = ['PA PPQ', 'Appeals PPQ'];
@@ -55,13 +55,15 @@
       customEnd: today,
       lastMode: null,
       lastWorkflow: '',
+      lastOutcome: 'Contacted',
       welcomeDone: false,
       settings: {
         theme: 'sea-breeze',
         compactDashboard: false,
         automaticTimeZone: true,
         timeZone: detected,
-        holidays: []
+        holidays: [],
+        workbenchCompact: false
       },
       days: {}
     };
@@ -168,7 +170,8 @@
         settings,
         days,
         lastMode: normalizeMode(parsed.lastMode) || deriveLatestMode(days),
-        lastWorkflow: normalizeWorkflow(parsed.lastWorkflow) || deriveLatestWorkflow(days)
+        lastWorkflow: normalizeWorkflow(parsed.lastWorkflow) || deriveLatestWorkflow(days),
+        lastOutcome: normalizeOutcome(parsed.lastOutcome || 'Contacted')
       };
     } catch (error) {
       console.error('Could not load tracker data:', error);
@@ -441,8 +444,7 @@
     return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
   }
 
-  function chooseMode(mode) {
-    const date = state.selectedDate;
+  function chooseModeForDate(date, mode) {
     const day = getDay(date);
     if (!canEditActivity(date) || day.modeLocked) return;
     if (day.modeInherited && day.mode === mode) return;
@@ -452,6 +454,10 @@
     state.lastMode = mode;
     saveState(`${mode === 'keys' ? 'Key Tracker' : 'Tally Counter'} selected`);
     renderAll();
+  }
+
+  function chooseMode(mode) {
+    chooseModeForDate(state.selectedDate, mode);
   }
 
   function lockModeForFirstEntry(day) {
@@ -464,75 +470,95 @@
     return true;
   }
 
-  function currentWorkflow() {
-    return normalizeWorkflow($('#workflowSelect').value);
+  function selectedWorkflow(selector = '#workflowSelect') {
+    return normalizeWorkflow($(selector)?.value);
   }
 
-  function addKeyBatch() {
-    const date = state.selectedDate;
+  function selectedOutcome(selector = '#outcomeSelect') {
+    return normalizeOutcome($(selector)?.value || state.lastOutcome);
+  }
+
+  function addKeyBatchForDate(date, inputSelector, workflowSelector, outcomeSelector) {
     const day = getDay(date);
     if (!canEditActivity(date) || day.mode !== 'keys') return;
-    const keys = keyTokens($('#keyInput').value);
+    const input = $(inputSelector);
+    const keys = keyTokens(input?.value);
     if (!keys.length) return toast('Paste or type at least one key.');
     const existing = new Set(day.entries.flatMap(entry => (entry.keys || []).map(key => String(key).toUpperCase())));
     const newKeys = keys.filter(key => !existing.has(key.toUpperCase()));
     if (!newKeys.length) return toast('Those keys are already recorded for today.');
     lockModeForFirstEntry(day);
     day.statusOverride = '';
-    const workflow = currentWorkflow();
+    const workflow = selectedWorkflow(workflowSelector);
+    const outcome = selectedOutcome(outcomeSelector);
     day.entries.push({
       id: createId('key'),
       type: 'keys',
       keys: newKeys,
       count: newKeys.length,
-      outcome: $('#outcomeSelect').value,
+      outcome,
       workflow,
       time: new Date().toISOString(),
       timeZone: activeTimeZone(),
       groupIndex: day.entries.length % 5
     });
     if (workflow) state.lastWorkflow = workflow;
-    $('#keyInput').value = '';
+    state.lastOutcome = outcome;
+    if (input) input.value = '';
     saveState();
     renderAll();
     const skipped = keys.length - newKeys.length;
     toast(`${newKeys.length} key${newKeys.length === 1 ? '' : 's'} added as one interaction${skipped ? `; ${skipped} duplicate${skipped === 1 ? '' : 's'} skipped` : ''}.`);
   }
 
-  function addTally(count) {
-    const date = state.selectedDate;
+  function addKeyBatch() {
+    addKeyBatchForDate(state.selectedDate, '#keyInput', '#workflowSelect', '#outcomeSelect');
+  }
+
+  function addTallyForDate(date, count, workflowSelector, outcomeSelector, customInputSelector = '') {
     const day = getDay(date);
     const amount = Math.floor(Number(count));
     if (!canEditActivity(date) || day.mode !== 'tally') return;
     if (!Number.isFinite(amount) || amount < 1) return toast('Enter a number greater than zero.');
     lockModeForFirstEntry(day);
     day.statusOverride = '';
-    const workflow = currentWorkflow();
+    const workflow = selectedWorkflow(workflowSelector);
+    const outcome = selectedOutcome(outcomeSelector);
     day.entries.push({
       id: createId('tally'),
       type: 'tally',
       count: amount,
       keys: [],
-      outcome: $('#outcomeSelect').value,
+      outcome,
       workflow,
       groupIndex: day.entries.length % 5
     });
     if (workflow) state.lastWorkflow = workflow;
-    $('#customTallyInput').value = '';
+    state.lastOutcome = outcome;
+    const customInput = customInputSelector ? $(customInputSelector) : null;
+    if (customInput) customInput.value = '';
     saveState();
     renderAll();
     toast(`${amount} interaction${amount === 1 ? '' : 's'} added.`);
   }
 
-  function undoLastTally() {
-    const day = getDay(state.selectedDate);
-    if (!canEditActivity(state.selectedDate) || day.mode !== 'tally') return;
+  function addTally(count) {
+    addTallyForDate(state.selectedDate, count, '#workflowSelect', '#outcomeSelect', '#customTallyInput');
+  }
+
+  function undoLastTallyForDate(date) {
+    const day = getDay(date);
+    if (!canEditActivity(date) || day.mode !== 'tally') return;
     const index = [...day.entries].map(entry => entry.type).lastIndexOf('tally');
     if (index < 0) return toast('There is no tally batch to undo.');
     day.entries.splice(index, 1);
     saveState();
     renderAll();
     toast('Last tally batch removed.');
+  }
+
+  function undoLastTally() {
+    undoLastTallyForDate(state.selectedDate);
   }
 
   function removeEntry(id) {
@@ -665,6 +691,7 @@
     closeMenu();
     renderAll();
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    setTimeout(updateStickyWorkbenchVisibility, 220);
   }
 
   function periodAnchor() {
@@ -733,6 +760,7 @@
 
     $('#workflowSelect').value = state.lastWorkflow || '';
     $('#workflowSelect').disabled = !editable;
+    $('#outcomeSelect').value = normalizeOutcome(state.lastOutcome);
     $('#outcomeSelect').disabled = !editable || !day.mode;
 
     $('#unselectedArea').classList.toggle('hidden', Boolean(day.mode));
@@ -762,6 +790,60 @@
     renderHistory(day, editable);
     renderDailyTimeline(day, editable);
     renderHourlyChart(day);
+  }
+
+  function shouldShowStickyWorkbench() {
+    if (!['today', 'week'].includes(activeView)) return false;
+    if (activeView === 'week') return true;
+    if (!isToday(state.selectedDate)) return true;
+    return window.scrollY > 220;
+  }
+
+  function updateStickyWorkbenchVisibility() {
+    const workbench = $('#stickyWorkbench');
+    if (!workbench) return;
+    const visible = shouldShowStickyWorkbench();
+    workbench.classList.toggle('show', visible);
+    workbench.setAttribute('aria-hidden', String(!visible));
+  }
+
+  function renderStickyWorkbench() {
+    ensureTodayModeDefault();
+    const date = todayISO();
+    const day = getDay(date);
+    const summary = daySummary(date);
+    const workbench = $('#stickyWorkbench');
+    workbench.classList.toggle('compact', Boolean(state.settings.workbenchCompact));
+    $('#stickySizeButton').textContent = state.settings.workbenchCompact ? '+' : '−';
+    $('#stickySizeButton').setAttribute('aria-expanded', String(!state.settings.workbenchCompact));
+    $('#stickySizeButton').setAttribute('aria-label', state.settings.workbenchCompact ? 'Show performance details' : 'Use smaller performance bar');
+    $('#stickyTodayDate').textContent = formatDate(date, { weekday: 'short', month: 'short', day: 'numeric' });
+    $('#stickyTotalMetric').textContent = summary.totalInteractions.toLocaleString();
+    $('#stickyContactedMetric').textContent = summary.outcomes.Contacted.toLocaleString();
+    $('#stickySnoozedMetric').textContent = summary.outcomes.Snoozed.toLocaleString();
+    $('#stickyUnableMetric').textContent = summary.outcomes['Unable to Contact'].toLocaleString();
+
+    const chooserVisible = !day.modeLocked;
+    $('#stickyModeChooser').classList.toggle('hidden', !chooserVisible);
+    $('#stickyKeyModeButton').classList.toggle('active', day.mode === 'keys');
+    $('#stickyTallyModeButton').classList.toggle('active', day.mode === 'tally');
+
+    $('#stickyWorkflowSelect').value = state.lastWorkflow || '';
+    $('#stickyOutcomeSelect').value = normalizeOutcome(state.lastOutcome);
+    $('#stickyOutcomeSelect').disabled = !day.mode;
+    $('#stickyKeyEntryArea').classList.toggle('hidden', day.mode !== 'keys');
+    $('#stickyTallyEntryArea').classList.toggle('hidden', day.mode !== 'tally');
+    $('#stickyAwaitingMethod').classList.toggle('hidden', Boolean(day.mode));
+    $('#stickyKeyInput').disabled = day.mode !== 'keys';
+    $('#stickyAddKeysButton').disabled = day.mode !== 'keys';
+    $$('[data-sticky-tally]').forEach(button => { button.disabled = day.mode !== 'tally'; });
+    $('#stickyCustomTallyInput').disabled = day.mode !== 'tally';
+    $('#stickyAddCustomTally').disabled = day.mode !== 'tally';
+    $('#stickyUndoTally').disabled = day.mode !== 'tally' || !day.entries.some(entry => entry.type === 'tally');
+    $('#stickyStatusText').textContent = day.mode
+      ? `Today’s active entry saves automatically · ${activeTimeZone()}`
+      : 'Choose today’s tracking method to begin.';
+    updateStickyWorkbenchVisibility();
   }
 
   function renderDailyBreakdown(summary) {
@@ -1284,6 +1366,7 @@
   function renderAll() {
     state.days[state.selectedDate] = sanitizeDay(getDay(state.selectedDate));
     renderPeriodControls();
+    renderStickyWorkbench();
     if (activeView === 'today') renderToday();
     if (activeView === 'week') renderWeek();
     if (activeView === 'custom') renderCustom();
@@ -1330,11 +1413,48 @@
       renderAll();
     });
 
+    $('#stickySizeButton').addEventListener('click', () => {
+      state.settings.workbenchCompact = !state.settings.workbenchCompact;
+      saveState('Performance bar size saved');
+      renderStickyWorkbench();
+    });
+    $('#stickyKeyModeButton').addEventListener('click', () => chooseModeForDate(todayISO(), 'keys'));
+    $('#stickyTallyModeButton').addEventListener('click', () => chooseModeForDate(todayISO(), 'tally'));
+    $('#stickyWorkflowSelect').addEventListener('change', event => {
+      state.lastWorkflow = normalizeWorkflow(event.target.value);
+      $('#workflowSelect').value = state.lastWorkflow || '';
+      saveState('Outcomes workflow saved');
+    });
+    $('#stickyOutcomeSelect').addEventListener('change', event => {
+      state.lastOutcome = normalizeOutcome(event.target.value);
+      $('#outcomeSelect').value = state.lastOutcome;
+      saveState('Result selection saved');
+    });
+    $('#stickyAddKeysButton').addEventListener('click', () => addKeyBatchForDate(todayISO(), '#stickyKeyInput', '#stickyWorkflowSelect', '#stickyOutcomeSelect'));
+    $('#stickyKeyInput').addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        addKeyBatchForDate(todayISO(), '#stickyKeyInput', '#stickyWorkflowSelect', '#stickyOutcomeSelect');
+      }
+    });
+    $$('[data-sticky-tally]').forEach(button => button.addEventListener('click', () => addTallyForDate(todayISO(), button.dataset.stickyTally, '#stickyWorkflowSelect', '#stickyOutcomeSelect')));
+    $('#stickyAddCustomTally').addEventListener('click', () => addTallyForDate(todayISO(), $('#stickyCustomTallyInput').value, '#stickyWorkflowSelect', '#stickyOutcomeSelect', '#stickyCustomTallyInput'));
+    $('#stickyCustomTallyInput').addEventListener('keydown', event => {
+      if (event.key === 'Enter') addTallyForDate(todayISO(), event.target.value, '#stickyWorkflowSelect', '#stickyOutcomeSelect', '#stickyCustomTallyInput');
+    });
+    $('#stickyUndoTally').addEventListener('click', () => undoLastTallyForDate(todayISO()));
+
     $('#keyModeButton').addEventListener('click', () => chooseMode('keys'));
     $('#tallyModeButton').addEventListener('click', () => chooseMode('tally'));
     $('#workflowSelect').addEventListener('change', event => {
       state.lastWorkflow = normalizeWorkflow(event.target.value);
+      $('#stickyWorkflowSelect').value = state.lastWorkflow || '';
       saveState('Outcomes workflow saved');
+    });
+    $('#outcomeSelect').addEventListener('change', event => {
+      state.lastOutcome = normalizeOutcome(event.target.value);
+      $('#stickyOutcomeSelect').value = state.lastOutcome;
+      saveState('Result selection saved');
     });
     $('#dayTypeSelect').addEventListener('change', event => updateDateStatus(event.target.value));
     $('#addKeysButton').addEventListener('click', addKeyBatch);
@@ -1434,6 +1554,16 @@
       installPrompt = null;
       $('#installApp').hidden = true;
     });
+
+    let stickyScrollFrame = null;
+    window.addEventListener('scroll', () => {
+      if (stickyScrollFrame) return;
+      stickyScrollFrame = requestAnimationFrame(() => {
+        stickyScrollFrame = null;
+        updateStickyWorkbenchVisibility();
+      });
+    }, { passive: true });
+    window.addEventListener('resize', updateStickyWorkbenchVisibility);
 
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape') {

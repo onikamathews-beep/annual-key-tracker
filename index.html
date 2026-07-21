@@ -31,6 +31,71 @@
         <button class="button button-secondary go-today" id="goToday" type="button" hidden>Go to Today</button>
       </div>
     </div>
+
+    <section class="sticky-workbench" id="stickyWorkbench" aria-label="Today’s active tracker" aria-hidden="true">
+      <div class="sticky-workbench-inner">
+        <div class="workbench-performance-row">
+          <div class="workbench-day">
+            <span>Today</span>
+            <strong id="stickyTodayDate">Today</strong>
+          </div>
+          <div class="workbench-metrics" aria-label="Today’s performance summary">
+            <div><span>Total</span><strong id="stickyTotalMetric">0</strong></div>
+            <div><span>Contacted</span><strong id="stickyContactedMetric">0</strong></div>
+            <div><span>Snoozed</span><strong id="stickySnoozedMetric">0</strong></div>
+            <div><span>Unable</span><strong id="stickyUnableMetric">0</strong></div>
+          </div>
+          <button class="workbench-size-button" id="stickySizeButton" type="button" aria-label="Use smaller performance bar" aria-expanded="true">−</button>
+        </div>
+
+        <div class="workbench-entry-row" id="stickyEntryBody">
+          <div class="sticky-mode-choice" id="stickyModeChooser" aria-label="Choose today’s tracking method">
+            <button id="stickyKeyModeButton" type="button">Key Tracker</button>
+            <button id="stickyTallyModeButton" type="button">Tally Counter</button>
+          </div>
+
+          <label class="compact-field">
+            <span>Outcomes</span>
+            <select id="stickyWorkflowSelect" aria-label="Today’s Outcomes workflow">
+              <option value="">Not selected</option>
+              <option>PA PPQ</option>
+              <option>Appeals PPQ</option>
+            </select>
+          </label>
+
+          <label class="compact-field">
+            <span>Result</span>
+            <select id="stickyOutcomeSelect" aria-label="Result for today’s next entry">
+              <option>Contacted</option>
+              <option>Snoozed</option>
+              <option>Unable to Contact</option>
+            </select>
+          </label>
+
+          <div class="sticky-key-entry hidden" id="stickyKeyEntryArea">
+            <label class="sr-only" for="stickyKeyInput">Paste or type keys</label>
+            <input id="stickyKeyInput" type="text" autocomplete="off" placeholder="Paste or type keys">
+            <button id="stickyAddKeysButton" type="button">Add</button>
+          </div>
+
+          <div class="sticky-tally-entry hidden" id="stickyTallyEntryArea">
+            <div class="sticky-tally-buttons" aria-label="Quick tally buttons">
+              <button type="button" data-sticky-tally="1">+1</button>
+              <button type="button" data-sticky-tally="2">+2</button>
+              <button type="button" data-sticky-tally="3">+3</button>
+              <button type="button" data-sticky-tally="4">+4</button>
+              <button type="button" data-sticky-tally="5">+5</button>
+            </div>
+            <input id="stickyCustomTallyInput" type="number" min="1" step="1" inputmode="numeric" aria-label="Custom tally amount" placeholder="× #">
+            <button id="stickyAddCustomTally" type="button">Add</button>
+            <button id="stickyUndoTally" class="sticky-undo" type="button" aria-label="Undo last tally batch">Undo</button>
+          </div>
+
+          <div class="sticky-awaiting-method hidden" id="stickyAwaitingMethod">Choose a method to begin.</div>
+        </div>
+        <div class="workbench-status" id="stickyStatusText">Today’s active entry saves automatically.</div>
+      </div>
+    </section>
   </header>
 
   <div class="menu-scrim" id="menuScrim" hidden></div>

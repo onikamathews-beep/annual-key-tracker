@@ -376,3 +376,77 @@ td select{border:1px solid var(--border);background:var(--panel-2);color:var(--t
 @media print{
   .compact-topbar,.menu-drawer,.menu-scrim{display:none!important}
 }
+
+
+/* Version 4: sticky, compact active tracker for Daily and Weekly views */
+.sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+.sticky-workbench{
+  display:none;
+  border-top:1px solid var(--border);
+  background:color-mix(in srgb,var(--panel) 96%,transparent);
+  box-shadow:0 12px 26px rgba(17,47,61,.12);
+}
+.sticky-workbench.show{display:block}
+.sticky-workbench-inner{max-width:1500px;margin:0 auto;padding:8px 18px 9px}
+.workbench-performance-row{display:grid;grid-template-columns:auto minmax(360px,1fr) auto;align-items:center;gap:10px}
+.workbench-day{min-width:120px;display:grid;gap:1px}
+.workbench-day span,.workbench-metrics span,.compact-field span{color:var(--muted);font-size:8px;font-weight:950;text-transform:uppercase;letter-spacing:.55px}
+.workbench-day strong{font-size:13px;white-space:nowrap}
+.workbench-metrics{display:grid;grid-template-columns:repeat(4,minmax(72px,1fr));gap:6px}
+.workbench-metrics>div{min-height:42px;border:1px solid var(--border);background:var(--panel-2);border-radius:9px;padding:5px 8px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.workbench-metrics strong{font-size:19px;line-height:1}
+.workbench-size-button{width:34px;height:34px;border:1px solid var(--border);border-radius:9px;background:var(--panel);color:var(--text);font-size:20px;font-weight:950;display:grid;place-items:center}
+.workbench-entry-row{display:grid;grid-template-columns:auto minmax(130px,190px) minmax(135px,190px) minmax(260px,1fr);align-items:end;gap:7px;margin-top:7px}
+.sticky-mode-choice{display:flex;align-items:center;gap:4px;padding:3px;border:1px solid var(--border);border-radius:9px;background:var(--panel-2);align-self:end}
+.sticky-mode-choice button,.sticky-tally-buttons button,.sticky-key-entry button,.sticky-tally-entry>button{min-height:34px;border:1px solid var(--border);border-radius:7px;background:var(--panel);color:var(--text);font-size:11px;font-weight:900;padding:6px 9px;white-space:nowrap}
+.sticky-mode-choice button.active{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+.compact-field{display:grid;gap:3px;min-width:0}
+.compact-field select,.sticky-key-entry input,.sticky-tally-entry input{width:100%;height:35px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2);color:var(--text);padding:6px 9px;outline:0;font-size:12px}
+.compact-field select:focus,.sticky-key-entry input:focus,.sticky-tally-entry input:focus{border-color:var(--primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--primary) 16%,transparent)}
+.sticky-key-entry{display:grid;grid-template-columns:minmax(170px,1fr) auto;gap:6px;align-items:end}
+.sticky-key-entry button,.sticky-tally-entry>button:not(.sticky-undo){background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+.sticky-tally-entry{display:grid;grid-template-columns:minmax(210px,1fr) 66px auto auto;gap:5px;align-items:center}
+.sticky-tally-buttons{display:grid;grid-template-columns:repeat(5,1fr);gap:4px}
+.sticky-tally-buttons button{padding:5px 6px}
+.sticky-undo{background:var(--panel-2)!important}
+.sticky-awaiting-method{min-height:35px;border:1px dashed var(--border);border-radius:8px;background:var(--panel-2);color:var(--muted);display:grid;place-items:center;padding:6px 10px;font-size:11px;font-weight:800}
+.workbench-status{margin-top:4px;color:var(--muted);font-size:9px;text-align:right}
+.sticky-workbench.compact .workbench-day{display:none}
+.sticky-workbench.compact .workbench-performance-row{grid-template-columns:minmax(320px,1fr) auto}
+.sticky-workbench.compact .workbench-metrics>div{min-height:34px;padding:3px 7px}
+.sticky-workbench.compact .workbench-metrics strong{font-size:16px}
+.sticky-workbench.compact .workbench-entry-row{margin-top:5px}
+.sticky-workbench.compact .compact-field span,.sticky-workbench.compact .workbench-status{display:none}
+.sticky-workbench.compact .compact-field{gap:0}
+
+@media(max-width:1050px){
+  .workbench-entry-row{grid-template-columns:auto minmax(120px,1fr) minmax(125px,1fr);align-items:end}
+  .sticky-key-entry,.sticky-tally-entry,.sticky-awaiting-method{grid-column:1/-1}
+  .workbench-status{text-align:left}
+}
+@media(max-width:760px){
+  .sticky-workbench-inner{padding:7px 10px 8px}
+  .workbench-performance-row{grid-template-columns:1fr auto}
+  .workbench-day{display:none}
+  .workbench-metrics{grid-template-columns:repeat(4,1fr);gap:4px}
+  .workbench-metrics>div{min-height:37px;padding:4px 5px;display:grid;justify-items:center;gap:1px}
+  .workbench-metrics strong{font-size:16px}
+  .workbench-entry-row{grid-template-columns:1fr 1fr;gap:5px;margin-top:5px}
+  .sticky-mode-choice{grid-column:1/-1}
+  .sticky-mode-choice button{flex:1}
+  .sticky-key-entry,.sticky-tally-entry,.sticky-awaiting-method{grid-column:1/-1}
+  .workbench-status{display:none}
+  .sticky-workbench.compact .workbench-performance-row{grid-template-columns:1fr auto}
+}
+@media(max-width:520px){
+  .sticky-workbench-inner{padding-left:8px;padding-right:8px}
+  .workbench-metrics span{font-size:7px}
+  .workbench-metrics strong{font-size:15px}
+  .workbench-entry-row{grid-template-columns:1fr 1fr}
+  .compact-field select,.sticky-key-entry input,.sticky-tally-entry input{height:34px;padding:5px 7px;font-size:11px}
+  .sticky-key-entry{grid-template-columns:minmax(0,1fr) 54px}
+  .sticky-tally-entry{grid-template-columns:1fr 58px 48px 52px}
+  .sticky-tally-buttons{grid-column:1/-1}
+  .sticky-tally-buttons button{min-height:31px}
+}
+@media print{.sticky-workbench{display:none!important}}
