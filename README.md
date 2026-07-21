@@ -1,37 +1,27 @@
-# Annual Key Tracker — Update v7
+# Annual Key Tracker — Update v9
 
 Upload every file in this folder to the root of the existing GitHub repository and allow GitHub to replace files with matching names.
 
-## Version 8 changes
+## Version 9 changes
 
-- Adds the seven 2026 company fixed holidays as built-in, nonremovable excluded dates.
-- Uses Friday, July 3, 2026 for Independence Day exactly as listed on the company calendar.
-- Fixed holidays automatically show as Holiday and are excluded from weekly/custom workday calculations.
-- Keeps the option to add and remove separate custom excluded dates in Settings.
-- Updates application and service-worker cache versions to Version 8.
-
-## Version 7 changes
-
-- Moves **Daily Timeline** out of the Tracker page and into its own left-menu view.
-- Moves **Interactions Recorded by Hour** out of the Tracker page and into its own left-menu view.
-- Keeps the date selector and previous/next date controls available in both new views.
-- Keeps today’s compact active tracker available while viewing the Timeline or hourly chart.
-- Displays the newest key group at the top of **Entries for This Date** and the oldest group at the bottom.
-- Displays the newest timestamped activity at the top of **Daily Timeline** and the oldest activity at the bottom.
-- Preserves the order of keys within a pasted group while moving the complete newest group above older groups.
-- Preserves the Version 6 behavior where every key counts as one interaction and receives its own editable row.
-- Keeps the existing browser storage key, so replacing the site files does not intentionally erase locally saved tracker data.
-- Updates the service-worker cache and asset versions to Version 7 so GitHub Pages loads the new layout.
+- Hides **Go to Today** whenever the selected date is already today or the selected week is the current week.
+- Shows **Go to Today** again after moving to another day or week.
+- Changes all entry grouping to alternate between only two coordinated colors per theme.
+- Adds a **Custom** option to the Color theme menu.
+- Selecting Custom opens a complete color picker for primary colors, surfaces, text, borders, statuses, and both alternating entry colors.
+- Custom color changes preview immediately and remain saved in the browser.
+- Adds a reset button that restores the custom palette to the Sea Breeze starting colors.
+- Keeps all Version 8 company fixed holidays and all prior tracker behavior.
+- Updates application and service-worker cache versions to Version 9.
 
 ## GitHub upload
 
 1. Open the `annual-key-tracker` repository.
 2. Choose **Add file → Upload files**.
 3. Select every file from this folder.
-4. Allow GitHub to replace the matching files.
-5. Use the commit message: `Move tracker insights to menu and sort newest first`
-6. Choose **Commit changes**.
-7. Reopen `https://onikamathews-beep.github.io/annual-key-tracker/`.
-8. If the old layout remains, press **Ctrl + Shift + R** once.
+4. Allow GitHub to replace matching files.
+5. Commit the changes.
+6. Reopen `https://onikamathews-beep.github.io/annual-key-tracker/`.
+7. Press **Ctrl + Shift + R** once if an older version remains cached.
 
-Tracker data remains in the browser’s local storage unless the browser data is cleared or the site address changes.
+Tracker data remains in the browser’s local storage unless browser data is cleared or the site address changes.

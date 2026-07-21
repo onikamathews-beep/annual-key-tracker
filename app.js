@@ -2,12 +2,53 @@
   'use strict';
 
   const STORAGE_KEY = 'annual-key-tracker-github-v1';
-  const APP_VERSION = 8;
-  const THEMES = ['sea-breeze', 'classic-blue', 'sage-stone', 'warm-sand', 'charcoal-gold'];
+  const APP_VERSION = 9;
+  const THEMES = ['sea-breeze', 'classic-blue', 'sage-stone', 'warm-sand', 'charcoal-gold', 'custom'];
   const OUTCOMES = ['Contacted', 'Snoozed', 'Unable to Contact'];
   const WORKFLOWS = ['PA PPQ', 'Appeals PPQ'];
   const NON_WORK_STATUSES = ['Scheduled Off', 'PTO', 'Holiday', 'Leave'];
   const NOTE_TYPES = ['Meeting', 'Lunch', 'Training', 'System Issue', 'Coaching', 'Other'];
+  const CUSTOM_COLOR_DEFAULTS = Object.freeze({
+    primary: '#2b728f',
+    primary2: '#16445b',
+    accent: '#e6b84e',
+    background: '#edf5f7',
+    panel: '#ffffff',
+    panel2: '#f4f8fa',
+    text: '#17303c',
+    muted: '#687b85',
+    border: '#cbdce2',
+    onPrimary: '#ffffff',
+    good: '#2f7d5a',
+    warn: '#a56d12',
+    bad: '#a84444',
+    group1: '#e5f3f7',
+    group2: '#dcebef'
+  });
+  const CUSTOM_COLOR_VARIABLES = Object.freeze({
+    primary: '--primary',
+    primary2: '--primary-2',
+    accent: '--accent',
+    background: '--background',
+    panel: '--panel',
+    panel2: '--panel-2',
+    text: '--text',
+    muted: '--muted',
+    border: '--border',
+    onPrimary: '--on-primary',
+    good: '--good',
+    warn: '--warn',
+    bad: '--bad',
+    group1: '--group-1',
+    group2: '--group-2'
+  });
+  const PRESET_THEME_COLORS = Object.freeze({
+    'sea-breeze': '#16445b',
+    'classic-blue': '#173f67',
+    'sage-stone': '#374c3e',
+    'warm-sand': '#68452d',
+    'charcoal-gold': '#25282d'
+  });
   const FIXED_COMPANY_HOLIDAYS = [
     { date: '2026-01-01', name: "New Year’s Day" },
     { date: '2026-01-19', name: 'MLK Jr. Day' },
@@ -56,6 +97,24 @@
 
   const todayISO = () => dateISOInTimeZone(new Date(), activeTimeZone());
 
+  function normalizeHexColor(value, fallback) {
+    const text = String(value || '').trim();
+    return /^#[0-9a-f]{6}$/i.test(text) ? text.toLowerCase() : fallback;
+  }
+
+  function normalizeCustomColors(source) {
+    const colors = {};
+    Object.entries(CUSTOM_COLOR_DEFAULTS).forEach(([key, fallback]) => {
+      colors[key] = normalizeHexColor(source?.[key], fallback);
+    });
+    return colors;
+  }
+
+  function normalizeGroupIndex(value, fallback = 0) {
+    const number = Number.isFinite(Number(value)) ? Number(value) : fallback;
+    return ((Math.trunc(number) % 2) + 2) % 2;
+  }
+
   function defaultState() {
     const detected = detectTimeZone();
     const today = dateISOInTimeZone(new Date(), detected);
@@ -75,7 +134,8 @@
         automaticTimeZone: true,
         timeZone: detected,
         holidays: [],
-        workbenchCompact: false
+        workbenchCompact: false,
+        customColors: { ...CUSTOM_COLOR_DEFAULTS }
       },
       days: {}
     };
@@ -136,7 +196,7 @@
       const inferredKeys = keysFromEntry(entry);
       const type = normalizeMode(entry.type || source.mode) || (inferredKeys.length ? 'keys' : 'tally');
       const keys = type === 'keys' ? inferredKeys : [];
-      const groupIndex = Number.isFinite(Number(entry.groupIndex)) ? Number(entry.groupIndex) : index % 5;
+      const groupIndex = normalizeGroupIndex(entry.groupIndex, index);
       const groupId = entry.groupId || entry.submissionId || entry.id || createId('group');
       const common = {
         ...entry,
@@ -195,6 +255,7 @@
       settings.timeZone = validTimeZone(settings.timeZone) ? settings.timeZone : detectTimeZone();
       settings.holidays = [...new Set((Array.isArray(settings.holidays) ? settings.holidays : [])
         .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value) && !FIXED_COMPANY_HOLIDAY_DATES.has(value)))].sort();
+      settings.customColors = normalizeCustomColors(settings.customColors);
       const days = {};
       Object.entries(parsed.days || {}).forEach(([date, day]) => {
         if (/^\d{4}-\d{2}-\d{2}$/.test(date)) days[date] = sanitizeDay(day);
@@ -400,7 +461,7 @@
 
   function nextGroupIndex(day) {
     const previous = [...day.entries].reverse().find(entry => Number.isFinite(Number(entry.groupIndex)));
-    return previous ? (Number(previous.groupIndex) + 1) % 5 : 0;
+    return previous ? (normalizeGroupIndex(previous.groupIndex) + 1) % 2 : 0;
   }
 
   function entryInteractions(entry) {
@@ -1011,7 +1072,7 @@
       const previousGroupId = index > 0 ? (displayEntries[index - 1].groupId || displayEntries[index - 1].id) : '';
       const nextGroupId = index < displayEntries.length - 1 ? (displayEntries[index + 1].groupId || displayEntries[index + 1].id) : '';
       const groupClasses = [
-        `group-${Number(entry.groupIndex ?? index) % 5}`,
+        `group-${normalizeGroupIndex(entry.groupIndex, index)}`,
         groupId !== previousGroupId ? 'group-start' : '',
         groupId !== nextGroupId ? 'group-end' : ''
       ].filter(Boolean).join(' ');
@@ -1396,6 +1457,7 @@
       importedSettings.timeZone = validTimeZone(importedSettings.timeZone) ? importedSettings.timeZone : detectTimeZone();
       importedSettings.holidays = [...new Set((Array.isArray(importedSettings.holidays) ? importedSettings.holidays : [])
         .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value) && !FIXED_COMPANY_HOLIDAY_DATES.has(value)))].sort();
+      importedSettings.customColors = normalizeCustomColors(importedSettings.customColors);
       state = {
         ...defaults,
         ...parsed,
@@ -1569,10 +1631,44 @@
       </div>`;
   }
 
+  function clearCustomThemeVariables() {
+    Object.values(CUSTOM_COLOR_VARIABLES).forEach(variable => document.documentElement.style.removeProperty(variable));
+  }
+
+  function applyCustomThemeVariables(colors) {
+    const normalized = normalizeCustomColors(colors);
+    Object.entries(CUSTOM_COLOR_VARIABLES).forEach(([key, variable]) => {
+      document.documentElement.style.setProperty(variable, normalized[key]);
+    });
+  }
+
+  function updateThemeColorMeta(theme, customColors) {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) return;
+    meta.setAttribute('content', theme === 'custom'
+      ? normalizeCustomColors(customColors).primary2
+      : (PRESET_THEME_COLORS[theme] || PRESET_THEME_COLORS['sea-breeze']));
+  }
+
+  function renderCustomThemeControls(theme) {
+    const colors = normalizeCustomColors(state.settings.customColors);
+    state.settings.customColors = colors;
+    $('#customThemePanel').classList.toggle('hidden', theme !== 'custom');
+    $$('[data-custom-color]').forEach(input => {
+      const key = input.dataset.customColor;
+      if (colors[key]) input.value = colors[key];
+    });
+  }
+
   function applySettings() {
     const theme = THEMES.includes(state.settings.theme) ? state.settings.theme : 'sea-breeze';
+    state.settings.theme = theme;
     document.documentElement.dataset.theme = theme;
+    if (theme === 'custom') applyCustomThemeVariables(state.settings.customColors);
+    else clearCustomThemeVariables();
     $('#themeSelect').value = theme;
+    renderCustomThemeControls(theme);
+    updateThemeColorMeta(theme, state.settings.customColors);
     $('#compactMode').checked = Boolean(state.settings.compactDashboard);
     populateTimeZones();
     const detected = detectTimeZone();
@@ -1732,6 +1828,29 @@
     $('#closeSettings').addEventListener('click', closeOverlays);
     $('#settingsOverlay').addEventListener('click', event => { if (event.target === $('#settingsOverlay')) closeOverlays(); });
     $('#themeSelect').addEventListener('change', event => { state.settings.theme = event.target.value; applySettings(); saveState(); renderAll(); });
+    $$('[data-custom-color]').forEach(input => {
+      input.addEventListener('input', event => {
+        const key = event.target.dataset.customColor;
+        const fallback = CUSTOM_COLOR_DEFAULTS[key];
+        state.settings.customColors = normalizeCustomColors(state.settings.customColors);
+        state.settings.customColors[key] = normalizeHexColor(event.target.value, fallback);
+        state.settings.theme = 'custom';
+        document.documentElement.dataset.theme = 'custom';
+        $('#themeSelect').value = 'custom';
+        $('#customThemePanel').classList.remove('hidden');
+        applyCustomThemeVariables(state.settings.customColors);
+        updateThemeColorMeta('custom', state.settings.customColors);
+      });
+      input.addEventListener('change', () => saveState('Custom colors saved'));
+    });
+    $('#resetCustomTheme').addEventListener('click', () => {
+      state.settings.theme = 'custom';
+      state.settings.customColors = { ...CUSTOM_COLOR_DEFAULTS };
+      applySettings();
+      saveState('Custom colors reset');
+      renderAll();
+      toast('Custom colors reset to the Sea Breeze starting palette.');
+    });
     $('#compactMode').addEventListener('change', event => { state.settings.compactDashboard = event.target.checked; saveState(); renderAll(); });
     $('#automaticTimeZone').addEventListener('change', event => {
       state.settings.automaticTimeZone = event.target.checked;

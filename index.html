@@ -8,7 +8,7 @@
   <title>Annual Key Tracker</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=8">
+  <link rel="stylesheet" href="styles.css?v=9">
 </head>
 <body>
   <header class="compact-topbar">
@@ -411,8 +411,35 @@
               <option value="sage-stone">Sage &amp; Stone</option>
               <option value="warm-sand">Warm Sand</option>
               <option value="charcoal-gold">Charcoal &amp; Gold</option>
+              <option value="custom">Custom</option>
             </select>
           </label>
+          <section class="custom-theme-panel hidden" id="customThemePanel" aria-label="Custom theme color picker">
+            <div class="custom-theme-heading">
+              <div>
+                <h4>Custom Color Picker</h4>
+                <p>Choose the colors used throughout the tracker. Changes preview immediately and save in this browser.</p>
+              </div>
+              <button class="button button-secondary" id="resetCustomTheme" type="button">Reset Colors</button>
+            </div>
+            <div class="custom-color-grid">
+              <label class="color-field"><span>Primary buttons</span><input type="color" id="customPrimary" data-custom-color="primary"></label>
+              <label class="color-field"><span>Header and dark primary</span><input type="color" id="customPrimary2" data-custom-color="primary2"></label>
+              <label class="color-field"><span>Accent</span><input type="color" id="customAccent" data-custom-color="accent"></label>
+              <label class="color-field"><span>Page background</span><input type="color" id="customBackground" data-custom-color="background"></label>
+              <label class="color-field"><span>Cards and menus</span><input type="color" id="customPanel" data-custom-color="panel"></label>
+              <label class="color-field"><span>Inputs and secondary panels</span><input type="color" id="customPanel2" data-custom-color="panel2"></label>
+              <label class="color-field"><span>Main text</span><input type="color" id="customText" data-custom-color="text"></label>
+              <label class="color-field"><span>Muted text</span><input type="color" id="customMuted" data-custom-color="muted"></label>
+              <label class="color-field"><span>Borders</span><input type="color" id="customBorder" data-custom-color="border"></label>
+              <label class="color-field"><span>Text on primary color</span><input type="color" id="customOnPrimary" data-custom-color="onPrimary"></label>
+              <label class="color-field"><span>Positive status</span><input type="color" id="customGood" data-custom-color="good"></label>
+              <label class="color-field"><span>Warning status</span><input type="color" id="customWarn" data-custom-color="warn"></label>
+              <label class="color-field"><span>Negative status</span><input type="color" id="customBad" data-custom-color="bad"></label>
+              <label class="color-field entry-color-field"><span>Entry color 1</span><input type="color" id="customGroup1" data-custom-color="group1"></label>
+              <label class="color-field entry-color-field"><span>Entry color 2</span><input type="color" id="customGroup2" data-custom-color="group2"></label>
+            </div>
+          </section>
           <label class="checkbox-row"><input id="compactMode" type="checkbox"> Use compact dashboard cards</label>
         </section>
 
@@ -455,7 +482,7 @@
             <button class="button button-danger" id="resetAllData" type="button">Reset All Data</button>
           </div>
           <p class="privacy-note">Data stays in this browser unless you download or import a file. The GitHub website does not receive your saved entries.</p>
-          <p class="version-note">Annual Key Tracker version 8</p>
+          <p class="version-note">Annual Key Tracker version 9</p>
         </section>
       </div>
     </section>
@@ -492,6 +519,6 @@
 
   <div class="toast-region" id="toastRegion" aria-live="polite"></div>
 
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>
