@@ -577,3 +577,19 @@ tr.duplicate-highlight td{animation:duplicatePulse 1s ease-in-out 0s 4;outline:2
 #versionNumber{
   display:none!important;
 }
+
+
+/* Date-control and hidden-element corrections */
+[hidden]{
+  display:none!important;
+}
+.date-display{
+  cursor:pointer;
+}
+.date-display:focus-visible{
+  outline:3px solid color-mix(in srgb,var(--accent) 72%,transparent);
+  outline-offset:2px;
+}
+.date-picker-wrap input[type="date"]{
+  pointer-events:none;
+}

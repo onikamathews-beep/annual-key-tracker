@@ -2,7 +2,11 @@
   'use strict';
 
   const STORAGE_KEY = 'annual-key-tracker-github-v1';
-  const APP_SCHEMA = 8;
+  const DATABASE_NAME = 'annual-key-tracker-database';
+  const DATABASE_STORE = 'tracker-state';
+  const DATABASE_STATE_KEY = 'current';
+  const LOCAL_FALLBACK_LIMIT = 900000;
+  const APP_SCHEMA = 9;
   const THEMES = ['sea-breeze', 'classic-blue', 'sage-stone', 'warm-sand', 'charcoal-gold'];
   const OUTCOMES = ['Contacted', 'Snoozed', 'Unable to Contact'];
   const WORKFLOWS = ['PA PPQ', 'Appeals PPQ'];
@@ -17,6 +21,9 @@
   let xlsxLoadPromise = null;
   let duplicatePromptResolver = null;
   let duplicatePromptContext = null;
+  let databasePromise = null;
+  let saveQueue = Promise.resolve(true);
+  let saveWarningVisible = false;
 
   function detectTimeZone() {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; }
@@ -163,54 +170,182 @@
     return '';
   }
 
-  function loadState() {
+  function normalizeLoadedState(parsed) {
     const defaults = defaultState();
+    if (!parsed || typeof parsed !== 'object') return defaults;
+
+    const settings = { ...defaults.settings, ...(parsed.settings || {}) };
+    settings.automaticTimeZone = settings.automaticTimeZone !== false;
+    settings.timeZone = validTimeZone(settings.timeZone) ? settings.timeZone : detectTimeZone();
+    settings.holidays = [...new Set((Array.isArray(settings.holidays) ? settings.holidays : [])
+      .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value)))].sort();
+
+    const days = {};
+    Object.entries(parsed.days || {}).forEach(([date, day]) => {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(date)) days[date] = sanitizeDay(day);
+    });
+
+    const normalized = {
+      ...defaults,
+      ...parsed,
+      schema: APP_SCHEMA,
+      selectedDate: defaults.selectedDate,
+      weekDate: defaults.weekDate,
+      settings,
+      days,
+      lastMode: normalizeMode(parsed.lastMode) || deriveLatestMode(days),
+      lastWorkflow: normalizeWorkflow(parsed.lastWorkflow) || deriveLatestWorkflow(days),
+      lastOutcome: normalizeOutcome(parsed.lastOutcome || 'Contacted')
+    };
+    delete normalized.version;
+    return normalized;
+  }
+
+  function loadState() {
     try {
-      const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-      if (!parsed || typeof parsed !== 'object') return defaults;
-      const settings = { ...defaults.settings, ...(parsed.settings || {}) };
-      settings.automaticTimeZone = settings.automaticTimeZone !== false;
-      settings.timeZone = validTimeZone(settings.timeZone) ? settings.timeZone : detectTimeZone();
-      settings.holidays = [...new Set((Array.isArray(settings.holidays) ? settings.holidays : [])
-        .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value)))].sort();
-      const days = {};
-      Object.entries(parsed.days || {}).forEach(([date, day]) => {
-        if (/^\d{4}-\d{2}-\d{2}$/.test(date)) days[date] = sanitizeDay(day);
-      });
-      return {
-        ...defaults,
-        ...parsed,
-        schema: APP_SCHEMA,
-        selectedDate: defaults.selectedDate,
-        weekDate: defaults.weekDate,
-        settings,
-        days,
-        lastMode: normalizeMode(parsed.lastMode) || deriveLatestMode(days),
-        lastWorkflow: normalizeWorkflow(parsed.lastWorkflow) || deriveLatestWorkflow(days),
-        lastOutcome: normalizeOutcome(parsed.lastOutcome || 'Contacted')
-      };
+      return normalizeLoadedState(JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'));
     } catch (error) {
-      console.error('Could not load tracker data:', error);
-      return defaults;
+      console.error('Could not load local tracker fallback:', error);
+      return defaultState();
     }
   }
 
-  state = loadState();
-  if (state && Object.prototype.hasOwnProperty.call(state, 'version')) delete state.version;
+  function openTrackerDatabase() {
+    if (!('indexedDB' in window)) return Promise.reject(new Error('IndexedDB is unavailable.'));
+    if (databasePromise) return databasePromise;
 
-  function saveState(message = 'Saved locally') {
+    databasePromise = new Promise((resolve, reject) => {
+      const request = indexedDB.open(DATABASE_NAME, 1);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        if (!database.objectStoreNames.contains(DATABASE_STORE)) {
+          database.createObjectStore(DATABASE_STORE);
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('The tracker database could not be opened.'));
+      request.onblocked = () => reject(new Error('The tracker database is blocked by another open tab.'));
+    });
+
+    return databasePromise;
+  }
+
+  async function readDatabaseState() {
+    const database = await openTrackerDatabase();
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(DATABASE_STORE, 'readonly');
+      const request = transaction.objectStore(DATABASE_STORE).get(DATABASE_STATE_KEY);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error || new Error('Saved tracker data could not be read.'));
+    });
+  }
+
+  async function writeDatabaseState(snapshot) {
+    const database = await openTrackerDatabase();
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(DATABASE_STORE, 'readwrite');
+      transaction.objectStore(DATABASE_STORE).put(snapshot, DATABASE_STATE_KEY);
+      transaction.oncomplete = () => resolve(true);
+      transaction.onerror = () => reject(transaction.error || new Error('Tracker data could not be written.'));
+      transaction.onabort = () => reject(transaction.error || new Error('The tracker save was interrupted.'));
+    });
+  }
+
+  async function clearDatabaseState() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      const status = $('#saveStatus');
-      if (status) {
-        status.textContent = message;
-        clearTimeout(saveState.timer);
-        saveState.timer = setTimeout(() => { status.textContent = 'Saved locally'; }, 1500);
-      }
+      const database = await openTrackerDatabase();
+      await new Promise((resolve, reject) => {
+        const transaction = database.transaction(DATABASE_STORE, 'readwrite');
+        transaction.objectStore(DATABASE_STORE).delete(DATABASE_STATE_KEY);
+        transaction.oncomplete = () => resolve(true);
+        transaction.onerror = () => reject(transaction.error || new Error('Tracker data could not be cleared.'));
+      });
     } catch (error) {
-      console.error('Could not save tracker data:', error);
-      toast('This browser could not save the tracker. Download a backup now.');
+      console.warn('Could not clear the tracker database:', error);
     }
+  }
+
+  function updateSaveStatus(message) {
+    const status = $('#saveStatus');
+    if (!status) return;
+    status.textContent = message;
+    clearTimeout(saveState.timer);
+    saveState.timer = setTimeout(() => { status.textContent = 'Saved on this device'; }, 1600);
+  }
+
+  async function persistSnapshot(snapshot, serialized) {
+    let databaseError = null;
+
+    try {
+      await writeDatabaseState(snapshot);
+
+      // Keep a small local fallback only when it comfortably fits.
+      try {
+        if (serialized.length <= LOCAL_FALLBACK_LIMIT) {
+          localStorage.setItem(STORAGE_KEY, serialized);
+        } else {
+          localStorage.removeItem(STORAGE_KEY);
+        }
+      } catch (localError) {
+        // IndexedDB already contains the complete tracker, so a fallback failure
+        // should not be presented as a failed save.
+        console.warn('The small local fallback could not be updated:', localError);
+      }
+
+      return true;
+    } catch (error) {
+      databaseError = error;
+      console.warn('Primary browser database save failed:', error);
+    }
+
+    // Fallback for browsers where IndexedDB is disabled.
+    try {
+      localStorage.setItem(STORAGE_KEY, serialized);
+      return true;
+    } catch (localError) {
+      const combined = new Error('The tracker could not save data in this browser.');
+      combined.databaseError = databaseError;
+      combined.localError = localError;
+      throw combined;
+    }
+  }
+
+  function saveState(message = 'Saved on this device') {
+    let serialized;
+    let snapshot;
+
+    try {
+      serialized = JSON.stringify(state);
+      snapshot = JSON.parse(serialized);
+    } catch (error) {
+      console.error('Could not prepare tracker data for saving:', error);
+      toast('The tracker could not prepare this change for saving. Download a backup before closing the page.');
+      return Promise.resolve(false);
+    }
+
+    const status = $('#saveStatus');
+    if (status) status.textContent = 'Saving…';
+
+    saveQueue = saveQueue
+      .catch(() => true)
+      .then(async () => {
+        try {
+          await persistSnapshot(snapshot, serialized);
+          saveWarningVisible = false;
+          updateSaveStatus(message);
+          return true;
+        } catch (error) {
+          console.error('Could not save tracker data:', error);
+          if (!saveWarningVisible) {
+            saveWarningVisible = true;
+            toast('The imported file was opened, but this device could not store the tracker for your next visit. Download a backup before closing the page.');
+          }
+          if (status) status.textContent = 'Not saved';
+          return false;
+        }
+      });
+
+    return saveQueue;
   }
 
   function getDay(date, create = true) {
@@ -825,6 +960,11 @@
       ? startOfWeek(anchor) === startOfWeek(todayISO())
       : isToday(anchor);
     $('#goToday').hidden = current;
+    $('#goToday').classList.toggle('hidden', current);
+    $('#dateDisplayButton').setAttribute(
+      'aria-label',
+      activeView === 'week' ? `Choose week. Current range ${weekRangeLabel(anchor)}` : `Choose date. Current date ${formatDate(anchor)}`
+    );
   }
 
   function renderToday() {
@@ -1352,7 +1492,8 @@
         welcomeDone: true
       };
       ensureTodayModeDefault();
-      saveState('Backup imported');
+      const backupSaved = await saveState('Backup imported');
+      if (!backupSaved) throw new Error('The backup was opened, but this device could not store it. Download a new backup before closing the tracker.');
       applySettings();
       closeOverlays();
       renderAll();
@@ -1654,7 +1795,8 @@
           return;
         }
         state.welcomeDone = true;
-        saveState('Previous Key Tracker imported');
+        const previousTrackerSaved = await saveState('Previous Key Tracker imported');
+        if (!previousTrackerSaved) throw new Error('The workbook was opened, but this device could not store the imported tracker. Download a backup before closing the tracker.');
         applySettings();
         closeOverlays();
         renderAll();
@@ -1753,7 +1895,8 @@
       if (!imported) throw new Error('No recognizable activity rows were found. For the previous tracker, dates must be in row 2 and each day must use a three-column block: Keys, Contact?, and Snoozed? (A:C, D:F, G:I, J:L, or M:O).');
       if (filenameEmployee && !String(state.employeeName || '').trim()) state.employeeName = filenameEmployee;
       state.welcomeDone = true;
-      saveState('Spreadsheet imported');
+      const spreadsheetSaved = await saveState('Spreadsheet imported');
+      if (!spreadsheetSaved) throw new Error('The spreadsheet was opened, but this device could not store the imported tracker. Download a backup before closing the tracker.');
       applySettings();
       closeOverlays();
       renderAll();
@@ -1768,6 +1911,7 @@
     if (!confirm('Reset all tracker data and settings in this browser? Download a backup first if you need the current data.')) return;
     state = defaultState();
     localStorage.removeItem(STORAGE_KEY);
+    clearDatabaseState();
     activeView = 'today';
     applySettings();
     closeOverlays();
@@ -1845,6 +1989,25 @@
     if (activeView === 'reports') renderReports();
   }
 
+  function openSelectedDatePicker() {
+    const input = $('#selectedDate');
+    if (!input) return;
+
+    input.value = periodAnchor();
+    try {
+      if (typeof input.showPicker === 'function') {
+        input.showPicker();
+      } else {
+        input.focus({ preventScroll: true });
+        input.click();
+      }
+    } catch (error) {
+      console.warn('Native date picker could not be opened directly:', error);
+      input.focus({ preventScroll: true });
+      input.click();
+    }
+  }
+
   function bindEvents() {
     $('#duplicateCancel').addEventListener('click', () => closeDuplicatePrompt('cancel'));
     $('#duplicateAddAnyway').addEventListener('click', () => closeDuplicatePrompt('add'));
@@ -1859,7 +2022,9 @@
     $('#menuSettings').addEventListener('click', () => openSettings());
     $('#menuBackup').addEventListener('click', () => openSettings('backupSettings'));
 
-    $('#mainViewSelect').addEventListener('change', event => {
+    $('#dateDisplayButton').addEventListener('click', openSelectedDatePicker);
+
+        $('#mainViewSelect').addEventListener('change', event => {
       const view = event.target.value;
       if (view === 'week') state.weekDate = state.selectedDate || todayISO();
       switchView(view);
@@ -1872,6 +2037,15 @@ $('#selectedDate').addEventListener('change', event => {
       renderAll();
     });
     $('#goToday').addEventListener('click', () => {
+      const alreadyCurrent = activeView === 'week'
+        ? startOfWeek(state.weekDate || todayISO()) === startOfWeek(todayISO())
+        : isToday(state.selectedDate);
+
+      if (alreadyCurrent) {
+        renderPeriodControls();
+        return;
+      }
+
       if (activeView === 'week') state.weekDate = todayISO();
       else state.selectedDate = todayISO();
       saveState();
@@ -2060,9 +2234,23 @@ $('#stickyUndoTally').addEventListener('click', () => undoLastTallyForDate(today
     if (!state.welcomeDone) showWelcome();
 
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('./service-worker.js?build=8').catch(error => console.warn('Service worker registration failed:', error));
+      navigator.serviceWorker.register('./service-worker.js?build=9', { updateViaCache: 'none' })
+        .then(registration => registration.update())
+        .catch(error => console.warn('Service worker registration failed:', error));
     }
   }
 
-  initialize();
+  async function boot() {
+    try {
+      const databaseState = await readDatabaseState();
+      state = databaseState ? normalizeLoadedState(databaseState) : loadState();
+    } catch (error) {
+      console.warn('The browser database could not be read; using the local fallback:', error);
+      state = loadState();
+    }
+
+    initialize();
+  }
+
+  boot();
 })();

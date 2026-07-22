@@ -1,31 +1,23 @@
 # Annual Key Tracker update
 
-Upload all files in this folder to the root of the existing GitHub repository and allow GitHub to replace matching files.
+This update corrects the date controls and browser persistence.
 
-## Corrected previous-workbook import
+## Corrections
 
-The importer now reads the older workbook exactly as structured:
-
-- dates are read from Excel row 2;
-- each day is a fixed three-column block;
-- A:C, D:F, G:I, J:L, and M:O are checked;
-- the first column contains Keys;
-- the second column contains Contact?;
-- the third column contains Snoozed?;
-- the importer finds the Keys / Contact? / Snoozed? header row and reads the key rows beneath it;
-- every key counts as one separate interaction;
-- blank Contact? and Snoozed? values import as Unable to Contact;
-- old entries do not receive artificial timestamps;
-- the same source row is not imported twice.
-
-The update also removes visible app-version labels. The internal schema number is used only for data compatibility and browser cache refreshes.
+- **Go to Today** is hidden whenever today is already selected.
+- Tapping the visible date field opens the device's native calendar.
+- The tracker no longer relies on the small `localStorage` limit for large imports.
+- Full tracker data is saved in IndexedDB, the browser's larger on-device database.
+- Small trackers still keep a local fallback when space allows.
+- Import completion now waits for the on-device save to finish.
+- If a browser blocks both storage methods, the message explains that the file was opened but not stored for the next visit.
+- Reset All Data clears both browser storage locations.
+- Existing locally saved data is migrated automatically.
 
 ## Upload
 
 1. Extract the ZIP.
-2. Open the `annual-key-tracker` repository.
-3. Choose **Add file → Upload files**.
-4. Select all eight files from the extracted folder.
-5. Allow GitHub to replace matching files.
-6. Commit with: `Fix previous tracker import layout`
-7. Close the tracker tab completely and reopen the site after GitHub Pages publishes the change.
+2. Upload all eight files to the root of the `annual-key-tracker` GitHub repository.
+3. Allow GitHub to replace matching files.
+4. Commit with: `Fix calendar and browser saving`
+5. After GitHub Pages publishes, completely close the old tracker tab and reopen the site.
