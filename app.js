@@ -2,63 +2,12 @@
   'use strict';
 
   const STORAGE_KEY = 'annual-key-tracker-github-v1';
-  const APP_VERSION = 9;
-  const THEMES = ['sea-breeze', 'classic-blue', 'sage-stone', 'warm-sand', 'charcoal-gold', 'custom'];
+  const APP_VERSION = 7;
+  const THEMES = ['sea-breeze', 'classic-blue', 'sage-stone', 'warm-sand', 'charcoal-gold'];
   const OUTCOMES = ['Contacted', 'Snoozed', 'Unable to Contact'];
   const WORKFLOWS = ['PA PPQ', 'Appeals PPQ'];
   const NON_WORK_STATUSES = ['Scheduled Off', 'PTO', 'Holiday', 'Leave'];
   const NOTE_TYPES = ['Meeting', 'Lunch', 'Training', 'System Issue', 'Coaching', 'Other'];
-  const CUSTOM_COLOR_DEFAULTS = Object.freeze({
-    primary: '#2b728f',
-    primary2: '#16445b',
-    accent: '#e6b84e',
-    background: '#edf5f7',
-    panel: '#ffffff',
-    panel2: '#f4f8fa',
-    text: '#17303c',
-    muted: '#687b85',
-    border: '#cbdce2',
-    onPrimary: '#ffffff',
-    good: '#2f7d5a',
-    warn: '#a56d12',
-    bad: '#a84444',
-    group1: '#e5f3f7',
-    group2: '#dcebef'
-  });
-  const CUSTOM_COLOR_VARIABLES = Object.freeze({
-    primary: '--primary',
-    primary2: '--primary-2',
-    accent: '--accent',
-    background: '--background',
-    panel: '--panel',
-    panel2: '--panel-2',
-    text: '--text',
-    muted: '--muted',
-    border: '--border',
-    onPrimary: '--on-primary',
-    good: '--good',
-    warn: '--warn',
-    bad: '--bad',
-    group1: '--group-1',
-    group2: '--group-2'
-  });
-  const PRESET_THEME_COLORS = Object.freeze({
-    'sea-breeze': '#16445b',
-    'classic-blue': '#173f67',
-    'sage-stone': '#374c3e',
-    'warm-sand': '#68452d',
-    'charcoal-gold': '#25282d'
-  });
-  const FIXED_COMPANY_HOLIDAYS = [
-    { date: '2026-01-01', name: "New Year’s Day" },
-    { date: '2026-01-19', name: 'MLK Jr. Day' },
-    { date: '2026-05-25', name: 'Memorial Day' },
-    { date: '2026-07-03', name: 'Independence Day' },
-    { date: '2026-09-07', name: 'Labor Day' },
-    { date: '2026-11-26', name: 'Thanksgiving Day' },
-    { date: '2026-12-25', name: 'Christmas Day' }
-  ];
-  const FIXED_COMPANY_HOLIDAY_DATES = new Set(FIXED_COMPANY_HOLIDAYS.map(item => item.date));
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -97,24 +46,6 @@
 
   const todayISO = () => dateISOInTimeZone(new Date(), activeTimeZone());
 
-  function normalizeHexColor(value, fallback) {
-    const text = String(value || '').trim();
-    return /^#[0-9a-f]{6}$/i.test(text) ? text.toLowerCase() : fallback;
-  }
-
-  function normalizeCustomColors(source) {
-    const colors = {};
-    Object.entries(CUSTOM_COLOR_DEFAULTS).forEach(([key, fallback]) => {
-      colors[key] = normalizeHexColor(source?.[key], fallback);
-    });
-    return colors;
-  }
-
-  function normalizeGroupIndex(value, fallback = 0) {
-    const number = Number.isFinite(Number(value)) ? Number(value) : fallback;
-    return ((Math.trunc(number) % 2) + 2) % 2;
-  }
-
   function defaultState() {
     const detected = detectTimeZone();
     const today = dateISOInTimeZone(new Date(), detected);
@@ -128,14 +59,13 @@
       lastWorkflow: '',
       lastOutcome: 'Contacted',
       welcomeDone: false,
+      employeeName: '',
       settings: {
         theme: 'sea-breeze',
         compactDashboard: false,
         automaticTimeZone: true,
         timeZone: detected,
-        holidays: [],
-        workbenchCompact: false,
-        customColors: { ...CUSTOM_COLOR_DEFAULTS }
+        holidays: []
       },
       days: {}
     };
@@ -173,17 +103,6 @@
     return null;
   }
 
-  function keysFromEntry(entry) {
-    const rawValues = [];
-    if (Array.isArray(entry?.keys)) rawValues.push(...entry.keys);
-    else if (entry?.keys != null) rawValues.push(entry.keys);
-    if (entry?.key != null) rawValues.push(entry.key);
-    if (entry?.keyId != null) rawValues.push(entry.keyId);
-    if (entry?.['key id'] != null) rawValues.push(entry['key id']);
-    if (!rawValues.length && entry?.activity != null) rawValues.push(entry.activity);
-    return rawValues.flatMap(value => keyTokens(value));
-  }
-
   function sanitizeDay(day) {
     const source = day && typeof day === 'object' ? day : {};
     const fallbackWorkflow = normalizeWorkflow(source.workflow || source.ppq);
@@ -193,10 +112,9 @@
       ? clean.statusOverride
       : NON_WORK_STATUSES.includes(source.dayType) ? source.dayType : '';
     clean.entries = Array.isArray(source.entries) ? source.entries.flatMap((entry, index) => {
-      const inferredKeys = keysFromEntry(entry);
-      const type = normalizeMode(entry.type || source.mode) || (inferredKeys.length ? 'keys' : 'tally');
-      const keys = type === 'keys' ? inferredKeys : [];
-      const groupIndex = normalizeGroupIndex(entry.groupIndex, index);
+      const type = normalizeMode(entry.type || source.mode) || 'tally';
+      const keys = Array.isArray(entry.keys) ? entry.keys.map(value => String(value).trim()).filter(Boolean) : [];
+      const groupIndex = Number.isFinite(Number(entry.groupIndex)) ? Number(entry.groupIndex) : index % 5;
       const groupId = entry.groupId || entry.submissionId || entry.id || createId('group');
       const common = {
         ...entry,
@@ -254,8 +172,7 @@
       settings.automaticTimeZone = settings.automaticTimeZone !== false;
       settings.timeZone = validTimeZone(settings.timeZone) ? settings.timeZone : detectTimeZone();
       settings.holidays = [...new Set((Array.isArray(settings.holidays) ? settings.holidays : [])
-        .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value) && !FIXED_COMPANY_HOLIDAY_DATES.has(value)))].sort();
-      settings.customColors = normalizeCustomColors(settings.customColors);
+        .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value)))].sort();
       const days = {};
       Object.entries(parsed.days || {}).forEach(([date, day]) => {
         if (/^\d{4}-\d{2}-\d{2}$/.test(date)) days[date] = sanitizeDay(day);
@@ -361,15 +278,9 @@
     return day === 0 || day === 6;
   }
 
-  function customHolidayDates() {
+  function holidayDates() {
     return Array.isArray(state.settings.holidays) ? state.settings.holidays : [];
   }
-
-  function holidayDates() {
-    return [...new Set([...FIXED_COMPANY_HOLIDAYS.map(item => item.date), ...customHolidayDates()])].sort();
-  }
-
-  function isFixedCompanyHoliday(date) { return FIXED_COMPANY_HOLIDAY_DATES.has(date); }
 
   function isSavedHoliday(date) { return holidayDates().includes(date); }
 
@@ -399,10 +310,15 @@
   }
 
   function ensureTodayModeDefault() {
-    const day = getDay(todayISO());
-    if (!day.entries.length && !day.modeLocked) {
-      day.mode = null;
-      day.modeInherited = false;
+    const date = todayISO();
+    const day = getDay(date);
+    if (!day.mode && !day.entries.length) {
+      const previous = previousModeBefore(date);
+      if (previous) {
+        day.mode = previous;
+        day.modeInherited = true;
+        day.modeLocked = false;
+      }
     }
   }
 
@@ -461,7 +377,7 @@
 
   function nextGroupIndex(day) {
     const previous = [...day.entries].reverse().find(entry => Number.isFinite(Number(entry.groupIndex)));
-    return previous ? (normalizeGroupIndex(previous.groupIndex) + 1) % 2 : 0;
+    return previous ? (Number(previous.groupIndex) + 1) % 5 : 0;
   }
 
   function entryInteractions(entry) {
@@ -816,6 +732,7 @@
   function copyDaySummary() {
     const summary = daySummary(state.selectedDate);
     const text = [
+      ...(state.employeeName ? [`Employee: ${state.employeeName}`] : []),
       `${formatDate(summary.date)} — ${summary.status}`,
       `Total Interactions: ${summary.totalInteractions}`,
       `Contacted: ${summary.outcomes.Contacted}`,
@@ -871,9 +788,7 @@
   function switchView(view) {
     activeView = view;
     $$('.view').forEach(section => section.classList.toggle('active', section.id === `view-${view}`));
-    const dateViews = ['today', 'week', 'timeline', 'hourly'];
-    $('#mainPeriodControls').classList.toggle('hidden', !dateViews.includes(view));
-    $('#mainViewSelect').classList.toggle('hidden', !['today', 'week'].includes(view));
+    $('#mainPeriodControls').classList.toggle('hidden', !['today', 'week'].includes(view));
     if (view === 'today' || view === 'week') $('#mainViewSelect').value = view;
     closeMenu();
     renderAll();
@@ -896,11 +811,10 @@
   }
 
   function renderPeriodControls() {
-    if (!['today', 'week', 'timeline', 'hourly'].includes(activeView)) return;
+    if (!['today', 'week'].includes(activeView)) return;
     const anchor = periodAnchor();
     $('#selectedDate').value = anchor;
-    $('#mainViewSelect').classList.toggle('hidden', !['today', 'week'].includes(activeView));
-    if (activeView === 'today' || activeView === 'week') $('#mainViewSelect').value = activeView;
+    $('#mainViewSelect').value = activeView;
     $('#dateDisplayButton').textContent = activeView === 'week'
       ? weekRangeLabel(anchor)
       : isToday(anchor)
@@ -910,8 +824,6 @@
       ? startOfWeek(anchor) === startOfWeek(todayISO())
       : isToday(anchor);
     $('#goToday').hidden = current;
-    $('#previousDay').setAttribute('aria-label', activeView === 'week' ? 'Previous week' : 'Previous day');
-    $('#nextDay').setAttribute('aria-label', activeView === 'week' ? 'Next week' : 'Next day');
   }
 
   function renderToday() {
@@ -942,7 +854,9 @@
     $('#modeChooser').classList.toggle('hidden', !chooserVisible);
     $('#keyModeButton').classList.toggle('active', day.mode === 'keys');
     $('#tallyModeButton').classList.toggle('active', day.mode === 'tally');
-    $('#modeChooserHelp').textContent = 'Choose once at the beginning of the shift. Each new day starts unselected.';
+    $('#modeChooserHelp').textContent = day.modeInherited && day.mode
+      ? `Continue with the previous workday’s choice or switch before the first entry.`
+      : 'Choose a method to begin. There is no separate confirmation button.';
 
     $('#workflowSelect').value = state.lastWorkflow || '';
     $('#workflowSelect').disabled = !editable;
@@ -969,16 +883,18 @@
 
     if (!editable) $('#entryNotice').textContent = 'Activity is read-only for this date. Use Date Status above to record Scheduled Off, PTO, Holiday, or Leave.';
     else if (!day.mode) $('#entryNotice').textContent = 'Select Key Tracker or Tally Counter. No file is required.';
-    else if (!day.modeLocked) $('#entryNotice').textContent = 'Choose Key Tracker or Tally Counter once for today before recording activity.';
+    else if (!day.modeLocked) $('#entryNotice').textContent = 'The previous workday’s method is ready. Enter activity to continue with it, or switch methods before the first entry.';
     else if (day.mode === 'keys') $('#entryNotice').textContent = `Each key counts as one interaction. Keys submitted together share one timestamp in ${activeTimeZone()} and save automatically.`;
-    else $('#entryNotice').textContent = 'Tally additions save automatically without individual timestamps.';
+    else $('#entryNotice').textContent = 'Tally additions save automatically.';
 
     renderHistory(day, editable);
+    renderDailyTimeline(day, editable);
+    renderHourlyChart(day);
   }
 
   function shouldShowStickyWorkbench() {
-    if (!['today', 'week', 'timeline', 'hourly'].includes(activeView)) return false;
-    if (['week', 'timeline', 'hourly'].includes(activeView)) return true;
+    if (!['today', 'week'].includes(activeView)) return false;
+    if (activeView === 'week') return true;
     if (!isToday(state.selectedDate)) return true;
     return window.scrollY > 220;
   }
@@ -987,8 +903,16 @@
     const workbench = $('#stickyWorkbench');
     if (!workbench) return;
     const visible = shouldShowStickyWorkbench();
+    const scrolledCompact = visible && window.scrollY > 220;
+    const header = $('.compact-topbar');
+
     workbench.classList.toggle('show', visible);
+    workbench.classList.toggle('compact', scrolledCompact);
     workbench.setAttribute('aria-hidden', String(!visible));
+    header?.classList.toggle('scroll-compact', scrolledCompact);
+
+    const scrollTotal = $('#scrollTotal');
+    if (scrollTotal) scrollTotal.hidden = !scrolledCompact;
   }
 
   function renderStickyWorkbench() {
@@ -996,16 +920,8 @@
     const date = todayISO();
     const day = getDay(date);
     const summary = daySummary(date);
-    const workbench = $('#stickyWorkbench');
-    workbench.classList.toggle('compact', Boolean(state.settings.workbenchCompact));
-    $('#stickySizeButton').textContent = state.settings.workbenchCompact ? '+' : '−';
-    $('#stickySizeButton').setAttribute('aria-expanded', String(!state.settings.workbenchCompact));
-    $('#stickySizeButton').setAttribute('aria-label', state.settings.workbenchCompact ? 'Show performance details' : 'Use smaller performance bar');
-    $('#stickyTodayDate').textContent = formatDate(date, { weekday: 'short', month: 'short', day: 'numeric' });
-    $('#stickyTotalMetric').textContent = summary.totalInteractions.toLocaleString();
-    $('#stickyContactedMetric').textContent = summary.outcomes.Contacted.toLocaleString();
-    $('#stickySnoozedMetric').textContent = summary.outcomes.Snoozed.toLocaleString();
-    $('#stickyUnableMetric').textContent = summary.outcomes['Unable to Contact'].toLocaleString();
+
+    $('#scrollTotalMetric').textContent = summary.totalInteractions.toLocaleString();
 
     const chooserVisible = !day.modeLocked;
     $('#stickyModeChooser').classList.toggle('hidden', !chooserVisible);
@@ -1021,12 +937,7 @@
     $('#stickyKeyInput').disabled = day.mode !== 'keys';
     $('#stickyAddKeysButton').disabled = day.mode !== 'keys';
     $$('[data-sticky-tally]').forEach(button => { button.disabled = day.mode !== 'tally'; });
-    $('#stickyCustomTallyInput').disabled = day.mode !== 'tally';
-    $('#stickyAddCustomTally').disabled = day.mode !== 'tally';
     $('#stickyUndoTally').disabled = day.mode !== 'tally' || !day.entries.some(entry => entry.type === 'tally');
-    $('#stickyStatusText').textContent = day.mode
-      ? `Today’s active entry saves automatically · ${activeTimeZone()}`
-      : 'Choose today’s tracking method to begin.';
     updateStickyWorkbenchVisibility();
   }
 
@@ -1039,46 +950,34 @@
     }).join('');
   }
 
-  function entriesNewestFirst(entries) {
-    const groups = [];
-    const groupMap = new Map();
-    entries.forEach((entry, index) => {
-      const groupId = entry.groupId || entry.id;
-      if (!groupMap.has(groupId)) {
-        const group = { groupId, entries: [], order: index };
-        groupMap.set(groupId, group);
-        groups.push(group);
-      }
-      groupMap.get(groupId).entries.push(entry);
-    });
-    return groups.reverse().flatMap(group => group.entries);
-  }
-
   function renderHistory(day, editable) {
     const body = $('#historyBody');
+    const showTime = day.mode !== 'tally';
+    $('#historyTimeHeader').hidden = !showTime;
+
     if (!day.entries.length) {
-      body.innerHTML = '<tr><td class="empty-row" colspan="5">No activity has been recorded for this date.</td></tr>';
+      body.innerHTML = `<tr><td class="empty-row" colspan="${showTime ? 5 : 4}">No activity has been recorded for this date.</td></tr>`;
       return;
     }
-    const displayEntries = entriesNewestFirst(day.entries);
-    body.innerHTML = displayEntries.map((entry, index) => {
+
+    body.innerHTML = day.entries.map((entry, index) => {
       const description = entry.type === 'keys' ? ((entry.keys || [])[0] || '') : `× ${entryInteractions(entry)}`;
-      const time = entry.type === 'keys' && entry.time
-        ? formatClockTime(entry.time, entry.timeZone || activeTimeZone())
-        : '<span class="not-timestamped">Not timestamped</span>';
+      const timeCell = showTime
+        ? `<td>${entry.type === 'keys' && entry.time ? formatClockTime(entry.time, entry.timeZone || activeTimeZone()) : ''}</td>`
+        : '';
       const outcomeOptions = OUTCOMES.map(outcome => `<option${normalizeOutcome(entry.outcome) === outcome ? ' selected' : ''}>${outcome}</option>`).join('');
       const workflowOptions = ['', ...WORKFLOWS].map(workflow => `<option value="${escapeHtml(workflow)}"${normalizeWorkflow(entry.workflow) === workflow ? ' selected' : ''}>${workflow || 'Not selected'}</option>`).join('');
       const groupId = entry.groupId || entry.id;
-      const previousGroupId = index > 0 ? (displayEntries[index - 1].groupId || displayEntries[index - 1].id) : '';
-      const nextGroupId = index < displayEntries.length - 1 ? (displayEntries[index + 1].groupId || displayEntries[index + 1].id) : '';
+      const previousGroupId = index > 0 ? (day.entries[index - 1].groupId || day.entries[index - 1].id) : '';
+      const nextGroupId = index < day.entries.length - 1 ? (day.entries[index + 1].groupId || day.entries[index + 1].id) : '';
       const groupClasses = [
-        `group-${normalizeGroupIndex(entry.groupIndex, index)}`,
+        `group-${Number(entry.groupIndex ?? index) % 5}`,
         groupId !== previousGroupId ? 'group-start' : '',
         groupId !== nextGroupId ? 'group-end' : ''
       ].filter(Boolean).join(' ');
       const keyAttribute = entry.type === 'keys' ? ` data-history-key="${escapeHtml(description)}"` : '';
       return `<tr class="${groupClasses}" data-group-id="${escapeHtml(groupId)}"${keyAttribute}>
-        <td>${time}</td>
+        ${timeCell}
         <td><select data-workflow-id="${entry.id}" ${editable ? '' : 'disabled'}>${workflowOptions}</select></td>
         <td class="group-cell">${escapeHtml(description)}</td>
         <td><select data-outcome-id="${entry.id}" ${editable ? '' : 'disabled'}>${outcomeOptions}</select></td>
@@ -1091,20 +990,16 @@
     const zone = activeTimeZone();
     const keyEntries = day.entries.filter(entry => entry.type === 'keys' && entry.time);
     const savedZones = [...new Set(keyEntries.map(entry => entry.timeZone || zone))];
-    $('#timelineTimeZone').textContent = savedZones.length > 1 ? 'Multiple saved time zones' : `Time zone: ${savedZones[0] || zone}`;
     const events = [];
     const groups = new Map();
 
-    keyEntries.forEach((entry, index) => {
+    keyEntries.forEach(entry => {
       const groupId = entry.groupId || entry.id;
-      if (!groups.has(groupId)) groups.set(groupId, { entries: [], order: index });
-      const group = groups.get(groupId);
-      group.entries.push(entry);
-      group.order = index;
+      if (!groups.has(groupId)) groups.set(groupId, []);
+      groups.get(groupId).push(entry);
     });
 
-    groups.forEach(group => {
-      const entries = group.entries;
+    groups.forEach(entries => {
       const first = entries[0];
       const entryZone = first.timeZone || zone;
       const parts = timeParts(first.time, entryZone);
@@ -1120,31 +1015,22 @@
         .map(outcome => `${outcomeCounts[outcome]} ${outcome}`).join(' · ');
       const workflowDetail = [...WORKFLOWS, 'Not selected'].filter(workflow => workflowCounts[workflow] > 0)
         .map(workflow => `${workflowCounts[workflow]} ${workflow}`).join(' · ');
-      const keyLines = entries.map(entry => {
-        const key = (entry.keys || [])[0] || '';
-        const workflow = normalizeWorkflow(entry.workflow) || 'Not selected';
-        const outcome = normalizeOutcome(entry.outcome);
-        return `<div class="timeline-key-line"><strong>${escapeHtml(key)}</strong><span>${escapeHtml(workflow)} · ${escapeHtml(outcome)}</span></div>`;
-      }).join('');
       events.push({
         sort: parts.hour * 60 + parts.minute,
-        order: group.order,
         kind: 'entry',
         id: first.groupId || first.id,
         time: formatClockTime(first.time, entryZone),
         label: `${keys.length} interaction${keys.length === 1 ? '' : 's'}`,
-        detail: `<div class="timeline-group-summary">${escapeHtml(workflowDetail)} · ${escapeHtml(outcomeDetail)}</div>${keyLines}`,
-        detailIsHtml: true,
+        detail: `${workflowDetail} · ${outcomeDetail} · ${keys.join(', ')}`,
         zone: entryZone
       });
     });
 
-    day.notes.forEach((note, noteIndex) => {
+    day.notes.forEach(note => {
       const localTime = /^\d{2}:\d{2}$/.test(note.localTime || '') ? note.localTime : '12:00';
       const [hour, minute] = localTime.split(':').map(Number);
       events.push({
         sort: hour * 60 + minute,
-        order: keyEntries.length + noteIndex,
         kind: 'note',
         id: note.id,
         time: formatClockTime(localTime),
@@ -1153,24 +1039,31 @@
         zone: note.timeZone || zone
       });
     });
-    events.sort((a, b) => b.sort - a.sort || (b.order || 0) - (a.order || 0) || a.kind.localeCompare(b.kind));
-    const tallyMessage = day.mode === 'tally' ? '<div class="timeline-info">Tally additions are not timestamped. Notes still appear on the timeline.</div>' : '';
-    $('#dailyTimeline').innerHTML = tallyMessage + (events.length ? events.map(event => `<div class="timeline-item ${event.kind}">
+    events.sort((a, b) => a.sort - b.sort || a.kind.localeCompare(b.kind));
+    const tallyMode = day.mode === 'tally';
+    $('#timelineEyebrow').textContent = tallyMode ? 'Optional notes' : 'Timestamped activity';
+    $('#timelineTimeZone').textContent = tallyMode
+      ? `Notes use ${zone}`
+      : (savedZones.length > 1 ? 'Multiple saved time zones' : `Time zone: ${savedZones[0] || zone}`);
+
+    const emptyMessage = tallyMode
+      ? 'No notes have been added for this date.'
+      : 'No timestamped key groups or notes are available for this date.';
+
+    $('#dailyTimeline').innerHTML = events.length ? events.map(event => `<div class="timeline-item ${event.kind}">
       <div class="timeline-time">${escapeHtml(event.time)}</div>
       <div class="timeline-dot" aria-hidden="true"></div>
-      <div class="timeline-content"><strong>${escapeHtml(event.label)}</strong>${event.detailIsHtml ? `<div class="timeline-detail-html">${event.detail}</div>` : `<span>${escapeHtml(event.detail)}</span>`}${event.zone !== zone ? `<small>${escapeHtml(event.zone)}</small>` : ''}</div>
+      <div class="timeline-content"><strong>${escapeHtml(event.label)}</strong><span>${escapeHtml(event.detail)}</span>${event.zone !== zone ? `<small>${escapeHtml(event.zone)}</small>` : ''}</div>
       ${event.kind === 'note' ? `<button class="timeline-remove" data-note-delete-id="${event.id}" type="button" ${editable ? '' : 'disabled'} aria-label="Remove note">×</button>` : ''}
-    </div>`).join('') : '<div class="empty-timeline">No timestamped key groups or notes are available for this date.</div>');
+    </div>`).join('') : `<div class="empty-timeline">${emptyMessage}</div>`;
   }
 
   function renderHourlyChart(day) {
     const chart = $('#hourlyChart');
-    if (day.mode === 'tally') {
-      $('#hourlyTimeZone').textContent = `Time zone: ${activeTimeZone()}`;
-      chart.innerHTML = '<div class="hourly-empty">Hourly trends are unavailable because this day was recorded using the Tally Counter.</div>';
-      $('#hourlyChartNote').textContent = 'Tally additions are intentionally not timestamped, so catch-up entries cannot distort hourly trends.';
-      return;
-    }
+    const hourlyCard = $('#hourlyCard');
+    const tallyMode = day.mode === 'tally';
+    hourlyCard.classList.toggle('hidden', tallyMode);
+    if (tallyMode) return;
     const keyEntries = day.entries.filter(entry => entry.type === 'keys' && entry.time);
     const savedZones = [...new Set(keyEntries.map(entry => validTimeZone(entry.timeZone) ? entry.timeZone : activeTimeZone()))];
     const chartZone = savedZones.length === 1 ? savedZones[0] : activeTimeZone();
@@ -1201,21 +1094,6 @@
     }
     chart.innerHTML = rows.join('');
     $('#hourlyChartNote').textContent = 'Each key counts as one interaction. Keys submitted together share one timestamp. Meetings, lunches, and other work may affect the pattern.';
-  }
-
-  function renderTimelineView() {
-    const date = state.selectedDate;
-    const day = getDay(date);
-    const editable = canEditActivity(date);
-    $('#noteTypeSelect').disabled = !editable;
-    $('#noteTimeInput').disabled = !editable;
-    $('#noteTextInput').disabled = !editable;
-    $('#addNoteButton').disabled = !editable;
-    renderDailyTimeline(day, editable);
-  }
-
-  function renderHourlyView() {
-    renderHourlyChart(getDay(state.selectedDate));
   }
 
   function summarizeRange(dates) {
@@ -1354,9 +1232,9 @@
 
   function exportCsv() {
     const rows = reportRows();
-    const headers = ['Date', 'Status', 'Total Interactions', 'Contacted', 'Snoozed', 'Unable to Contact', 'PA PPQ', 'Appeals PPQ', 'Outcomes Not Selected'];
+    const headers = ['Employee', 'Date', 'Status', 'Total Interactions', 'Contacted', 'Snoozed', 'Unable to Contact', 'PA PPQ', 'Appeals PPQ', 'Outcomes Not Selected'];
     const lines = [headers, ...rows.map(item => [
-      item.date, item.status, item.totalInteractions, item.outcomes.Contacted, item.outcomes.Snoozed,
+      state.employeeName || '', item.date, item.status, item.totalInteractions, item.outcomes.Contacted, item.outcomes.Snoozed,
       item.outcomes['Unable to Contact'], item.workflows['PA PPQ'], item.workflows['Appeals PPQ'], item.workflows['Not selected']
     ])].map(row => row.map(escapeCsv).join(','));
     downloadBlob(lines.join('\n'), `Annual_Key_Tracker_Report_${$('#reportStart').value}_to_${$('#reportEnd').value}.csv`, 'text/csv;charset=utf-8');
@@ -1394,6 +1272,7 @@
       return exportCsv();
     }
     const rows = reportRows().map(item => ({
+      Employee: state.employeeName || '',
       Date: item.date,
       Status: item.status,
       'Total Interactions': item.totalInteractions,
@@ -1409,6 +1288,7 @@
     Object.keys(state.days).sort().forEach(date => {
       const day = getDay(date, false);
       day.entries.forEach((entry, index) => detailRows.push({
+        Employee: state.employeeName || '',
         Date: date,
         Status: effectiveStatus(date),
         Method: day.mode === 'keys' ? 'Key Tracker' : day.mode === 'tally' ? 'Tally Counter' : '',
@@ -1422,6 +1302,7 @@
         'Time Zone': entry.type === 'keys' ? entry.timeZone || '' : ''
       }));
       day.notes.forEach(note => noteRows.push({
+        Employee: state.employeeName || '',
         Date: date,
         Time: note.localTime || '',
         'Time Zone': note.timeZone || '',
@@ -1456,8 +1337,7 @@
       importedSettings.automaticTimeZone = importedSettings.automaticTimeZone !== false;
       importedSettings.timeZone = validTimeZone(importedSettings.timeZone) ? importedSettings.timeZone : detectTimeZone();
       importedSettings.holidays = [...new Set((Array.isArray(importedSettings.holidays) ? importedSettings.holidays : [])
-        .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value) && !FIXED_COMPANY_HOLIDAY_DATES.has(value)))].sort();
-      importedSettings.customColors = normalizeCustomColors(importedSettings.customColors);
+        .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value)))].sort();
       state = {
         ...defaults,
         ...parsed,
@@ -1482,6 +1362,198 @@
     }
   }
 
+
+  function employeeNameFromFilename(filename) {
+    const base = String(filename || '')
+      .replace(/\.[^.]+$/, '')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const match = base.match(/^(.*?)\s+(?:20\d{2}\s+)?(?:annual\s+)?key\s+tracker\b/i);
+    const name = (match?.[1] || '').trim();
+    if (!name || /^(annual|key|tracker)$/i.test(name)) return '';
+    return name;
+  }
+
+  function spreadsheetCellValue(sheet, row, column) {
+    const address = XLSX.utils.encode_cell({ r: row, c: column });
+    const cell = sheet[address];
+    if (!cell) return '';
+    if (cell.v !== undefined && cell.v !== null) return cell.v;
+    return cell.w ?? '';
+  }
+
+  function cleanSpreadsheetText(value) {
+    if (value instanceof Date) return value;
+    return String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  function legacyColumnGroups(sheet) {
+    if (!sheet?.['!ref']) return [];
+    const range = XLSX.utils.decode_range(sheet['!ref']);
+    const groups = [];
+    for (let column = range.s.c; column <= range.e.c - 2; column += 1) {
+      const keyHeader = String(cleanSpreadsheetText(spreadsheetCellValue(sheet, 6, column))).toLowerCase();
+      const contactHeader = String(cleanSpreadsheetText(spreadsheetCellValue(sheet, 6, column + 1))).toLowerCase();
+      const snoozedHeader = String(cleanSpreadsheetText(spreadsheetCellValue(sheet, 6, column + 2))).toLowerCase();
+      if (keyHeader !== 'keys' || !contactHeader.includes('contact') || !snoozedHeader.includes('snooz')) continue;
+
+      const dateValue = spreadsheetCellValue(sheet, 1, column);
+      const dateCell = sheet[XLSX.utils.encode_cell({ r: 1, c: column })];
+      const date = parseDate(dateValue) || parseDate(dateCell?.w);
+      if (!date) continue;
+
+      groups.push({
+        keyColumn: column,
+        contactColumn: column + 1,
+        snoozedColumn: column + 2,
+        date,
+        workflow: normalizeWorkflow(spreadsheetCellValue(sheet, 2, column))
+      });
+    }
+    return groups;
+  }
+
+  function legacyMarker(value) {
+    if (value === true) return true;
+    if (typeof value === 'number') return value !== 0;
+    const text = String(cleanSpreadsheetText(value)).toLowerCase();
+    return ['x', 'yes', 'y', 'true', '1', 'checked', 'check'].includes(text);
+  }
+
+  function legacyResult(contactValue, snoozedValue) {
+    const contactText = String(cleanSpreadsheetText(contactValue)).toLowerCase();
+    const snoozedText = String(cleanSpreadsheetText(snoozedValue)).toLowerCase();
+    const combined = `${contactText} ${snoozedText}`;
+
+    if (combined.includes('snooz')) return { outcome: 'Snoozed', marked: true };
+    if (combined.includes('unable') || combined.includes('no contact')) return { outcome: 'Unable to Contact', marked: true };
+    if (combined.includes('contact')) return { outcome: 'Contacted', marked: true };
+    if (legacyMarker(snoozedValue)) return { outcome: 'Snoozed', marked: true };
+    if (legacyMarker(contactValue)) return { outcome: 'Contacted', marked: true };
+
+    return { outcome: 'Unable to Contact', marked: false };
+  }
+
+  function parseLegacyMonthlyWorkbook(workbook, file) {
+    const records = [];
+    let recognizedSheets = 0;
+
+    workbook.SheetNames.forEach(sheetName => {
+      const sheet = workbook.Sheets[sheetName];
+      const groups = legacyColumnGroups(sheet);
+      if (groups.length < 2) return;
+      recognizedSheets += 1;
+      const range = XLSX.utils.decode_range(sheet['!ref']);
+
+      groups.forEach(group => {
+        for (let row = 7; row <= range.e.r; row += 1) {
+          const rawKey = cleanSpreadsheetText(spreadsheetCellValue(sheet, row, group.keyColumn));
+          if (!rawKey || rawKey instanceof Date) continue;
+          const keys = keyTokens(rawKey);
+          if (!keys.length) continue;
+
+          const contactValue = spreadsheetCellValue(sheet, row, group.contactColumn);
+          const snoozedValue = spreadsheetCellValue(sheet, row, group.snoozedColumn);
+          const result = legacyResult(contactValue, snoozedValue);
+          const sourceAddress = XLSX.utils.encode_cell({ r: row, c: group.keyColumn });
+
+          keys.forEach((key, keyIndex) => {
+            records.push({
+              date: group.date,
+              key,
+              workflow: group.workflow,
+              outcome: result.outcome,
+              resultMarked: result.marked,
+              sheetName,
+              sourceAddress,
+              sourceRef: `legacy|${sheetName}|${sourceAddress}|${group.date}|${keyIndex}|${String(key).toUpperCase()}`
+            });
+          });
+        }
+      });
+    });
+
+    return {
+      detected: recognizedSheets > 0,
+      recognizedSheets,
+      employeeName: employeeNameFromFilename(file.name),
+      records
+    };
+  }
+
+  function importLegacyMonthlyWorkbook(workbook, file) {
+    const parsed = parseLegacyMonthlyWorkbook(workbook, file);
+    if (!parsed.detected) return null;
+    if (!parsed.records.length) throw new Error('The older monthly tracker layout was recognized, but no keys were found.');
+
+    const dates = [...new Set(parsed.records.map(record => record.date))].sort();
+    const unmarked = parsed.records.filter(record => !record.resultMarked).length;
+    const nameText = parsed.employeeName ? ` for ${parsed.employeeName}` : '';
+    const blankText = unmarked
+      ? `\n\n${unmarked.toLocaleString()} key${unmarked === 1 ? '' : 's'} have no Contact or Snoozed mark. Those will be imported as Unable to Contact.`
+      : '';
+    const confirmed = confirm(
+      `Import ${parsed.records.length.toLocaleString()} key${parsed.records.length === 1 ? '' : 's'} across ${dates.length.toLocaleString()} date${dates.length === 1 ? '' : 's'}${nameText}?${blankText}\n\nOlder entries will not receive timestamps, so they will not affect the hourly chart.`
+    );
+    if (!confirmed) return { cancelled: true };
+
+    const existingSourceRefs = new Set();
+    Object.values(state.days).forEach(sourceDay => {
+      sanitizeDay(sourceDay).entries.forEach(entry => {
+        if (entry.importSourceRef) existingSourceRefs.add(entry.importSourceRef);
+      });
+    });
+
+    let imported = 0;
+    let alreadyImported = 0;
+    parsed.records.forEach(record => {
+      if (existingSourceRefs.has(record.sourceRef)) {
+        alreadyImported += 1;
+        return;
+      }
+
+      const day = getDay(record.date);
+      if (!day.mode || !day.entries.length) day.mode = 'keys';
+      day.modeLocked = true;
+      day.modeInherited = false;
+
+      const groupIndex = day.entries.length % 5;
+      day.entries.push({
+        id: createId('legacy-key'),
+        type: 'keys',
+        keys: [record.key],
+        count: 1,
+        outcome: record.outcome,
+        workflow: record.workflow,
+        groupId: createId('legacy-group'),
+        groupIndex,
+        importedFrom: file.name,
+        importSheet: record.sheetName,
+        importCell: record.sourceAddress,
+        importSourceRef: record.sourceRef,
+        importedWithoutTimestamp: true
+      });
+
+      existingSourceRefs.add(record.sourceRef);
+      if (record.workflow) state.lastWorkflow = record.workflow;
+      imported += 1;
+    });
+
+    if (parsed.employeeName && !String(state.employeeName || '').trim()) {
+      state.employeeName = parsed.employeeName;
+    }
+    state.lastMode = 'keys';
+
+    return {
+      imported,
+      alreadyImported,
+      dates: dates.length,
+      employeeName: parsed.employeeName,
+      unmarked
+    };
+  }
+
   function safeImportedTime(date, value) {
     if (!value) return `${date}T12:00:00.000Z`;
     const parsed = new Date(`${date} ${String(value).trim()}`);
@@ -1493,15 +1565,40 @@
       await ensureXlsx();
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+
+      const legacyResult = importLegacyMonthlyWorkbook(workbook, file);
+      if (legacyResult?.cancelled) return;
+      if (legacyResult) {
+        if (!legacyResult.imported && legacyResult.alreadyImported) {
+          toast('This previous Key Tracker has already been imported.');
+          return;
+        }
+        state.welcomeDone = true;
+        saveState('Previous Key Tracker imported');
+        applySettings();
+        closeOverlays();
+        renderAll();
+
+        const nameText = legacyResult.employeeName ? ` for ${legacyResult.employeeName}` : '';
+        const skippedText = legacyResult.alreadyImported
+          ? `; ${legacyResult.alreadyImported.toLocaleString()} previously imported row${legacyResult.alreadyImported === 1 ? '' : 's'} skipped`
+          : '';
+        toast(`${legacyResult.imported.toLocaleString()} key${legacyResult.imported === 1 ? '' : 's'} imported across ${legacyResult.dates.toLocaleString()} date${legacyResult.dates === 1 ? '' : 's'}${nameText}${skippedText}.`);
+        return;
+      }
+
       let imported = 0;
       let skipped = 0;
+      const filenameEmployee = employeeNameFromFilename(file.name);
+
       workbook.SheetNames.forEach(sheetName => {
         const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '', raw: false });
-        rows.forEach(row => {
+        rows.forEach((row, rowIndex) => {
           const normalized = {};
           Object.entries(row).forEach(([key, value]) => { normalized[String(key).trim().toLowerCase()] = value; });
           const date = parseDate(normalized.date || normalized['work date'] || normalized.day || normalized['activity date']);
           if (!date) { skipped += 1; return; }
+
           const day = getDay(date);
           const mode = normalizeMode(normalized.method || normalized.mode || normalized.type || normalized['tracking method']);
           const keyText = normalized.keys || normalized.key || normalized['key id'] || normalized['key(s)'] || normalized.activity || '';
@@ -1511,56 +1608,76 @@
           const workflow = normalizeWorkflow(normalized.workflow || normalized['outcomes workflow'] || normalized.ppq || possibleOutcomesField);
           const outcome = normalizeOutcome(normalized.outcome || normalized.result || (workflow ? '' : possibleOutcomesField) || normalized.status);
           const importedStatus = normalized['day status'] || normalized['day type'];
+
           if (NON_WORK_STATUSES.includes(importedStatus)) day.statusOverride = importedStatus;
           const resolvedMode = mode || (keys.length ? 'keys' : count > 0 ? 'tally' : null);
           if (!resolvedMode) { skipped += 1; return; }
-          if (!day.mode) day.mode = resolvedMode;
+
+          if (!day.mode || !day.entries.length) day.mode = resolvedMode;
           day.modeLocked = true;
           day.modeInherited = false;
-          const entryCount = resolvedMode === 'keys' ? keys.length : count;
-          if (entryCount < 1) { skipped += 1; return; }
-          const groupId = createId('group');
-          const groupIndex = nextGroupIndex(day);
+
+          const groupId = createId('import-group');
+          const groupIndex = day.entries.length % 5;
+
           if (resolvedMode === 'keys') {
-            const timeZone = validTimeZone(normalized['time zone'] || normalized.timezone) ? (normalized['time zone'] || normalized.timezone) : activeTimeZone();
-            const time = safeImportedTime(date, normalized.time);
-            keys.forEach(key => day.entries.push({
-              id: createId('import-key'),
-              type: 'keys',
-              keys: [key],
-              count: 1,
-              outcome,
-              workflow,
-              groupId,
-              groupIndex,
-              timeZone,
-              time,
-              importedFrom: file.name
-            }));
+            if (!keys.length) { skipped += 1; return; }
+            keys.forEach((key, keyIndex) => {
+              const entry = {
+                id: createId('import-key'),
+                type: 'keys',
+                keys: [key],
+                count: 1,
+                outcome,
+                workflow,
+                groupId,
+                groupIndex,
+                importedFrom: file.name,
+                importSheet: sheetName,
+                importRow: rowIndex + 2
+              };
+              if (normalized.time) {
+                entry.timeZone = validTimeZone(normalized['time zone'] || normalized.timezone)
+                  ? (normalized['time zone'] || normalized.timezone)
+                  : activeTimeZone();
+                entry.time = safeImportedTime(date, normalized.time);
+              } else {
+                entry.importedWithoutTimestamp = true;
+              }
+              day.entries.push(entry);
+              imported += 1;
+            });
           } else {
+            if (count < 1) { skipped += 1; return; }
             day.entries.push({
               id: createId('import-tally'),
               type: 'tally',
               keys: [],
-              count: entryCount,
+              count,
               outcome,
               workflow,
               groupId,
               groupIndex,
-              importedFrom: file.name
+              importedFrom: file.name,
+              importSheet: sheetName,
+              importRow: rowIndex + 2
             });
+            imported += 1;
           }
+
           if (workflow) state.lastWorkflow = workflow;
           state.lastMode = resolvedMode;
-          imported += 1;
         });
       });
-      if (!imported) throw new Error('No recognizable activity rows were found. Include a Date column and a Keys or Count column.');
+
+      if (!imported) throw new Error('No recognizable activity rows were found. Use the older monthly Key Tracker workbook or include a Date column and a Keys or Count column.');
+      if (filenameEmployee && !String(state.employeeName || '').trim()) state.employeeName = filenameEmployee;
       state.welcomeDone = true;
       saveState('Spreadsheet imported');
+      applySettings();
       closeOverlays();
       renderAll();
-      toast(`${imported} activity row${imported === 1 ? '' : 's'} imported${skipped ? `; ${skipped} row${skipped === 1 ? '' : 's'} skipped` : ''}.`);
+      toast(`${imported.toLocaleString()} activity entr${imported === 1 ? 'y' : 'ies'} imported${skipped ? `; ${skipped.toLocaleString()} row${skipped === 1 ? '' : 's'} skipped` : ''}.`);
     } catch (error) {
       console.error(error);
       toast(error.message || 'The spreadsheet could not be imported.');
@@ -1610,65 +1727,17 @@
   }
 
   function renderHolidayList() {
-    const customDates = customHolidayDates();
-    const fixedItems = FIXED_COMPANY_HOLIDAYS.map(item => `
-      <div class="holiday-item holiday-item-fixed" title="Company fixed holiday">
-        <span class="holiday-name">${escapeHtml(item.name)}</span>
-        <span>${formatDate(item.date, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span>
-        <span class="fixed-holiday-badge">Fixed</span>
-      </div>`).join('');
-    const customItems = customDates.length
-      ? customDates.map(date => `<div class="holiday-item"><span>${formatDate(date, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span><button type="button" data-remove-holiday="${date}" aria-label="Remove excluded date">×</button></div>`).join('')
-      : '<p class="privacy-note">No additional holidays or excluded dates have been added.</p>';
-    $('#holidayList').innerHTML = `
-      <div class="holiday-list-group">
-        <p class="holiday-list-heading">2026 Company Fixed Holidays</p>
-        <div class="holiday-chip-list">${fixedItems}</div>
-      </div>
-      <div class="holiday-list-group">
-        <p class="holiday-list-heading">Additional Excluded Dates</p>
-        <div class="holiday-chip-list">${customItems}</div>
-      </div>`;
-  }
-
-  function clearCustomThemeVariables() {
-    Object.values(CUSTOM_COLOR_VARIABLES).forEach(variable => document.documentElement.style.removeProperty(variable));
-  }
-
-  function applyCustomThemeVariables(colors) {
-    const normalized = normalizeCustomColors(colors);
-    Object.entries(CUSTOM_COLOR_VARIABLES).forEach(([key, variable]) => {
-      document.documentElement.style.setProperty(variable, normalized[key]);
-    });
-  }
-
-  function updateThemeColorMeta(theme, customColors) {
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (!meta) return;
-    meta.setAttribute('content', theme === 'custom'
-      ? normalizeCustomColors(customColors).primary2
-      : (PRESET_THEME_COLORS[theme] || PRESET_THEME_COLORS['sea-breeze']));
-  }
-
-  function renderCustomThemeControls(theme) {
-    const colors = normalizeCustomColors(state.settings.customColors);
-    state.settings.customColors = colors;
-    $('#customThemePanel').classList.toggle('hidden', theme !== 'custom');
-    $$('[data-custom-color]').forEach(input => {
-      const key = input.dataset.customColor;
-      if (colors[key]) input.value = colors[key];
-    });
+    const dates = holidayDates();
+    $('#holidayList').innerHTML = dates.length
+      ? dates.map(date => `<div class="holiday-item"><span>${formatDate(date, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span><button type="button" data-remove-holiday="${date}" aria-label="Remove holiday">×</button></div>`).join('')
+      : '<p class="privacy-note">No holidays or excluded dates have been added.</p>';
   }
 
   function applySettings() {
     const theme = THEMES.includes(state.settings.theme) ? state.settings.theme : 'sea-breeze';
-    state.settings.theme = theme;
     document.documentElement.dataset.theme = theme;
-    if (theme === 'custom') applyCustomThemeVariables(state.settings.customColors);
-    else clearCustomThemeVariables();
     $('#themeSelect').value = theme;
-    renderCustomThemeControls(theme);
-    updateThemeColorMeta(theme, state.settings.customColors);
+    $('#employeeNameInput').value = String(state.employeeName || '');
     $('#compactMode').checked = Boolean(state.settings.compactDashboard);
     populateTimeZones();
     const detected = detectTimeZone();
@@ -1690,8 +1759,6 @@
     renderPeriodControls();
     renderStickyWorkbench();
     if (activeView === 'today') renderToday();
-    if (activeView === 'timeline') renderTimelineView();
-    if (activeView === 'hourly') renderHourlyView();
     if (activeView === 'week') renderWeek();
     if (activeView === 'custom') renderCustom();
     if (activeView === 'dashboard') renderDashboard();
@@ -1717,19 +1784,7 @@
       if (view === 'week') state.weekDate = state.selectedDate || todayISO();
       switchView(view);
     });
-    $('#previousDay').addEventListener('click', () => {
-      if (activeView === 'week') state.weekDate = addDays(state.weekDate || todayISO(), -7);
-      else state.selectedDate = addDays(state.selectedDate, -1);
-      saveState();
-      renderAll();
-    });
-    $('#nextDay').addEventListener('click', () => {
-      if (activeView === 'week') state.weekDate = addDays(state.weekDate || todayISO(), 7);
-      else state.selectedDate = addDays(state.selectedDate, 1);
-      saveState();
-      renderAll();
-    });
-    $('#selectedDate').addEventListener('change', event => {
+$('#selectedDate').addEventListener('change', event => {
       if (!event.target.value) return;
       if (activeView === 'week') state.weekDate = event.target.value;
       else state.selectedDate = event.target.value;
@@ -1743,12 +1798,7 @@
       renderAll();
     });
 
-    $('#stickySizeButton').addEventListener('click', () => {
-      state.settings.workbenchCompact = !state.settings.workbenchCompact;
-      saveState('Performance bar size saved');
-      renderStickyWorkbench();
-    });
-    $('#stickyKeyModeButton').addEventListener('click', () => chooseModeForDate(todayISO(), 'keys'));
+$('#stickyKeyModeButton').addEventListener('click', () => chooseModeForDate(todayISO(), 'keys'));
     $('#stickyTallyModeButton').addEventListener('click', () => chooseModeForDate(todayISO(), 'tally'));
     $('#stickyWorkflowSelect').addEventListener('change', event => {
       state.lastWorkflow = normalizeWorkflow(event.target.value);
@@ -1768,11 +1818,7 @@
       }
     });
     $$('[data-sticky-tally]').forEach(button => button.addEventListener('click', () => addTallyForDate(todayISO(), button.dataset.stickyTally, '#stickyWorkflowSelect', '#stickyOutcomeSelect')));
-    $('#stickyAddCustomTally').addEventListener('click', () => addTallyForDate(todayISO(), $('#stickyCustomTallyInput').value, '#stickyWorkflowSelect', '#stickyOutcomeSelect', '#stickyCustomTallyInput'));
-    $('#stickyCustomTallyInput').addEventListener('keydown', event => {
-      if (event.key === 'Enter') addTallyForDate(todayISO(), event.target.value, '#stickyWorkflowSelect', '#stickyOutcomeSelect', '#stickyCustomTallyInput');
-    });
-    $('#stickyUndoTally').addEventListener('click', () => undoLastTallyForDate(todayISO()));
+$('#stickyUndoTally').addEventListener('click', () => undoLastTallyForDate(todayISO()));
 
     $('#keyModeButton').addEventListener('click', () => chooseMode('keys'));
     $('#tallyModeButton').addEventListener('click', () => chooseMode('tally'));
@@ -1827,30 +1873,8 @@
 
     $('#closeSettings').addEventListener('click', closeOverlays);
     $('#settingsOverlay').addEventListener('click', event => { if (event.target === $('#settingsOverlay')) closeOverlays(); });
+    $('#employeeNameInput').addEventListener('change', event => { state.employeeName = String(event.target.value || '').trim(); saveState('Employee name saved'); });
     $('#themeSelect').addEventListener('change', event => { state.settings.theme = event.target.value; applySettings(); saveState(); renderAll(); });
-    $$('[data-custom-color]').forEach(input => {
-      input.addEventListener('input', event => {
-        const key = event.target.dataset.customColor;
-        const fallback = CUSTOM_COLOR_DEFAULTS[key];
-        state.settings.customColors = normalizeCustomColors(state.settings.customColors);
-        state.settings.customColors[key] = normalizeHexColor(event.target.value, fallback);
-        state.settings.theme = 'custom';
-        document.documentElement.dataset.theme = 'custom';
-        $('#themeSelect').value = 'custom';
-        $('#customThemePanel').classList.remove('hidden');
-        applyCustomThemeVariables(state.settings.customColors);
-        updateThemeColorMeta('custom', state.settings.customColors);
-      });
-      input.addEventListener('change', () => saveState('Custom colors saved'));
-    });
-    $('#resetCustomTheme').addEventListener('click', () => {
-      state.settings.theme = 'custom';
-      state.settings.customColors = { ...CUSTOM_COLOR_DEFAULTS };
-      applySettings();
-      saveState('Custom colors reset');
-      renderAll();
-      toast('Custom colors reset to the Sea Breeze starting palette.');
-    });
     $('#compactMode').addEventListener('change', event => { state.settings.compactDashboard = event.target.checked; saveState(); renderAll(); });
     $('#automaticTimeZone').addEventListener('change', event => {
       state.settings.automaticTimeZone = event.target.checked;
@@ -1869,14 +1893,10 @@
     $('#addHolidayButton').addEventListener('click', () => {
       const date = $('#holidayDateInput').value;
       if (!date) return toast('Choose a holiday or excluded date.');
-      if (isFixedCompanyHoliday(date)) {
-        $('#holidayDateInput').value = '';
-        return toast(`${formatDate(date)} is already a company fixed holiday.`);
-      }
       if (!state.settings.holidays.includes(date)) state.settings.holidays.push(date);
       state.settings.holidays.sort();
       $('#holidayDateInput').value = '';
-      saveState('Excluded date saved');
+      saveState('Holiday saved');
       applySettings();
       renderAll();
       toast(`${formatDate(date)} will be excluded from Weekly and Custom Range views.`);

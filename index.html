@@ -8,7 +8,7 @@
   <title>Annual Key Tracker</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=9">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="compact-topbar">
@@ -26,28 +26,17 @@
           <input id="selectedDate" type="date" aria-label="Choose a date">
         </div>
 
-        <button class="period-arrow" id="previousDay" type="button" aria-label="Previous period">‹</button>
-        <button class="period-arrow" id="nextDay" type="button" aria-label="Next period">›</button>
+        <div class="scroll-total" id="scrollTotal" hidden aria-label="Today's total interactions">
+          <span>Total</span>
+          <strong id="scrollTotalMetric">0</strong>
+        </div>
+
         <button class="button button-secondary go-today" id="goToday" type="button" hidden>Go to Today</button>
       </div>
     </div>
 
     <section class="sticky-workbench" id="stickyWorkbench" aria-label="Today’s active tracker" aria-hidden="true">
       <div class="sticky-workbench-inner">
-        <div class="workbench-performance-row">
-          <div class="workbench-day">
-            <span>Today</span>
-            <strong id="stickyTodayDate">Today</strong>
-          </div>
-          <div class="workbench-metrics" aria-label="Today’s performance summary">
-            <div><span>Total</span><strong id="stickyTotalMetric">0</strong></div>
-            <div><span>Contacted</span><strong id="stickyContactedMetric">0</strong></div>
-            <div><span>Snoozed</span><strong id="stickySnoozedMetric">0</strong></div>
-            <div><span>Unable</span><strong id="stickyUnableMetric">0</strong></div>
-          </div>
-          <button class="workbench-size-button" id="stickySizeButton" type="button" aria-label="Use smaller performance bar" aria-expanded="true">−</button>
-        </div>
-
         <div class="workbench-entry-row" id="stickyEntryBody">
           <div class="sticky-mode-choice" id="stickyModeChooser" aria-label="Choose today’s tracking method">
             <button id="stickyKeyModeButton" type="button">Key Tracker</button>
@@ -86,14 +75,11 @@
               <button type="button" data-sticky-tally="4">+4</button>
               <button type="button" data-sticky-tally="5">+5</button>
             </div>
-            <input id="stickyCustomTallyInput" type="number" min="1" step="1" inputmode="numeric" aria-label="Custom tally amount" placeholder="× #">
-            <button id="stickyAddCustomTally" type="button">Add</button>
-            <button id="stickyUndoTally" class="sticky-undo" type="button" aria-label="Undo last tally batch">Undo</button>
+            <button id="stickyUndoTally" class="sticky-undo" type="button" aria-label="Undo">Undo</button>
           </div>
 
           <div class="sticky-awaiting-method hidden" id="stickyAwaitingMethod">Choose a method to begin.</div>
         </div>
-        <div class="workbench-status" id="stickyStatusText">Today’s active entry saves automatically.</div>
       </div>
     </section>
   </header>
@@ -106,8 +92,6 @@
     </div>
     <nav class="menu-list">
       <button type="button" data-menu-view="today">Tracker</button>
-      <button type="button" data-menu-view="timeline">Daily Timeline</button>
-      <button type="button" data-menu-view="hourly">Interactions Recorded by Hour</button>
       <button type="button" data-menu-view="custom">Custom Range</button>
       <button type="button" data-menu-view="dashboard">Dashboard</button>
       <button type="button" data-menu-view="reports">Reports</button>
@@ -224,7 +208,7 @@
               <input id="customTallyInput" type="number" min="1" step="1" inputmode="numeric" placeholder="Enter any number">
               <button class="button button-primary" id="addCustomTally" type="button">Add × Number</button>
             </div>
-            <button class="button button-secondary" id="undoTally" type="button">Undo last tally batch</button>
+            <button class="button button-secondary" id="undoTally" type="button">Undo</button>
           </div>
         </div>
 
@@ -246,7 +230,7 @@
           <table>
             <thead>
               <tr>
-                <th>Time</th>
+                <th id="historyTimeHeader">Time</th>
                 <th>Outcomes</th>
                 <th>Keys / Count</th>
                 <th>Result</th>
@@ -258,56 +242,53 @@
         </div>
       </section>
 
-    </section>
-
-    <section class="view" id="view-timeline">
-      <section class="card timeline-card standalone-insight-card">
-        <div class="section-heading compact">
-          <div>
-            <p class="eyebrow">Timestamped activity</p>
-            <h2>Daily Timeline</h2>
-            <p class="subtle" id="timelineTimeZone"></p>
+      <div class="today-insights">
+        <section class="card timeline-card" id="timelineCard">
+          <div class="section-heading compact">
+            <div>
+              <p class="eyebrow" id="timelineEyebrow">Timestamped activity</p>
+              <h2>Daily Timeline</h2>
+              <p class="subtle" id="timelineTimeZone"></p>
+            </div>
           </div>
-        </div>
 
-        <div class="note-form" id="noteForm">
-          <label class="field">
-            <span>Note type</span>
-            <select id="noteTypeSelect">
-              <option>Meeting</option>
-              <option>Lunch</option>
-              <option>Training</option>
-              <option>System Issue</option>
-              <option>Coaching</option>
-              <option>Other</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Time</span>
-            <input id="noteTimeInput" type="time">
-          </label>
-          <label class="field note-text-field">
-            <span>Optional details</span>
-            <input id="noteTextInput" type="text" maxlength="160" placeholder="Example: Team meeting until 9:45 AM">
-          </label>
-          <button class="button button-secondary" id="addNoteButton" type="button">Add Note</button>
-        </div>
-        <div class="timeline-list" id="dailyTimeline"></div>
-      </section>
-    </section>
-
-    <section class="view" id="view-hourly">
-      <section class="card hourly-card standalone-insight-card">
-        <div class="section-heading compact">
-          <div>
-            <p class="eyebrow">Key Tracker only</p>
-            <h2>Interactions Recorded by Hour</h2>
-            <p class="subtle" id="hourlyTimeZone"></p>
+          <div class="note-form" id="noteForm">
+            <label class="field">
+              <span>Note type</span>
+              <select id="noteTypeSelect">
+                <option>Meeting</option>
+                <option>Lunch</option>
+                <option>Training</option>
+                <option>System Issue</option>
+                <option>Coaching</option>
+                <option>Other</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Time</span>
+              <input id="noteTimeInput" type="time">
+            </label>
+            <label class="field note-text-field">
+              <span>Optional details</span>
+              <input id="noteTextInput" type="text" maxlength="160" placeholder="Example: Team meeting until 9:45 AM">
+            </label>
+            <button class="button button-secondary" id="addNoteButton" type="button">Add Note</button>
           </div>
-        </div>
-        <div class="hourly-chart" id="hourlyChart"></div>
-        <p class="privacy-note" id="hourlyChartNote">Each key counts as one interaction. Keys submitted together share one timestamp. Meetings, lunches, and other work may affect the pattern.</p>
-      </section>
+          <div class="timeline-list" id="dailyTimeline"></div>
+        </section>
+
+        <section class="card hourly-card" id="hourlyCard">
+          <div class="section-heading compact">
+            <div>
+              <p class="eyebrow">Key Tracker only</p>
+              <h2>Interactions Recorded by Hour</h2>
+              <p class="subtle" id="hourlyTimeZone"></p>
+            </div>
+          </div>
+          <div class="hourly-chart" id="hourlyChart"></div>
+          <p class="privacy-note" id="hourlyChartNote">Each key counts as one interaction. Keys submitted together share one timestamp. Meetings, lunches, and other work may affect the pattern.</p>
+        </section>
+      </div>
     </section>
 
     <section class="view" id="view-week">
@@ -402,6 +383,15 @@
         <button class="icon-button light" id="closeSettings" type="button" aria-label="Close settings">×</button>
       </header>
       <div class="settings-body">
+
+        <section class="settings-section">
+          <h3>Employee</h3>
+          <label class="field"><span>Employee name</span>
+            <input id="employeeNameInput" type="text" autocomplete="name" placeholder="Enter employee name">
+          </label>
+          <p class="privacy-note">When possible, a previous Key Tracker import fills this from the workbook filename. The name stays in this browser and is included in downloaded reports.</p>
+        </section>
+
         <section class="settings-section" id="appearanceSettings">
           <h3>Appearance</h3>
           <label class="field"><span>Color theme</span>
@@ -411,35 +401,8 @@
               <option value="sage-stone">Sage &amp; Stone</option>
               <option value="warm-sand">Warm Sand</option>
               <option value="charcoal-gold">Charcoal &amp; Gold</option>
-              <option value="custom">Custom</option>
             </select>
           </label>
-          <section class="custom-theme-panel hidden" id="customThemePanel" aria-label="Custom theme color picker">
-            <div class="custom-theme-heading">
-              <div>
-                <h4>Custom Color Picker</h4>
-                <p>Choose the colors used throughout the tracker. Changes preview immediately and save in this browser.</p>
-              </div>
-              <button class="button button-secondary" id="resetCustomTheme" type="button">Reset Colors</button>
-            </div>
-            <div class="custom-color-grid">
-              <label class="color-field"><span>Primary buttons</span><input type="color" id="customPrimary" data-custom-color="primary"></label>
-              <label class="color-field"><span>Header and dark primary</span><input type="color" id="customPrimary2" data-custom-color="primary2"></label>
-              <label class="color-field"><span>Accent</span><input type="color" id="customAccent" data-custom-color="accent"></label>
-              <label class="color-field"><span>Page background</span><input type="color" id="customBackground" data-custom-color="background"></label>
-              <label class="color-field"><span>Cards and menus</span><input type="color" id="customPanel" data-custom-color="panel"></label>
-              <label class="color-field"><span>Inputs and secondary panels</span><input type="color" id="customPanel2" data-custom-color="panel2"></label>
-              <label class="color-field"><span>Main text</span><input type="color" id="customText" data-custom-color="text"></label>
-              <label class="color-field"><span>Muted text</span><input type="color" id="customMuted" data-custom-color="muted"></label>
-              <label class="color-field"><span>Borders</span><input type="color" id="customBorder" data-custom-color="border"></label>
-              <label class="color-field"><span>Text on primary color</span><input type="color" id="customOnPrimary" data-custom-color="onPrimary"></label>
-              <label class="color-field"><span>Positive status</span><input type="color" id="customGood" data-custom-color="good"></label>
-              <label class="color-field"><span>Warning status</span><input type="color" id="customWarn" data-custom-color="warn"></label>
-              <label class="color-field"><span>Negative status</span><input type="color" id="customBad" data-custom-color="bad"></label>
-              <label class="color-field entry-color-field"><span>Entry color 1</span><input type="color" id="customGroup1" data-custom-color="group1"></label>
-              <label class="color-field entry-color-field"><span>Entry color 2</span><input type="color" id="customGroup2" data-custom-color="group2"></label>
-            </div>
-          </section>
           <label class="checkbox-row"><input id="compactMode" type="checkbox"> Use compact dashboard cards</label>
         </section>
 
@@ -455,20 +418,20 @@
 
         <section class="settings-section">
           <h3>Holidays and Excluded Dates</h3>
-          <p class="subtle">The 2026 company fixed holidays are built in and cannot be removed. Weekly and Custom Range views skip weekends, fixed holidays, and any additional dates saved here.</p>
+          <p class="subtle">Weekly and Custom Range views always skip weekends and dates saved here.</p>
           <div class="holiday-controls">
             <input id="holidayDateInput" type="date">
-            <button class="button button-secondary" id="addHolidayButton" type="button">Add Excluded Date</button>
+            <button class="button button-secondary" id="addHolidayButton" type="button">Add Holiday</button>
           </div>
           <div class="holiday-list" id="holidayList"></div>
         </section>
 
         <section class="settings-section" id="backupSettings">
           <h3>Import Previous Tracker Data</h3>
-          <p class="subtle">Import a JSON backup or an Excel/CSV tracker file. Importing is optional.</p>
+          <p class="subtle">Imports the older monthly Key Tracker workbook with Date, Keys, Contact?, and Snoozed? sections. Standard Excel and CSV activity tables are also supported.</p>
           <div class="settings-buttons">
             <button class="button button-secondary" id="importBackupButton" type="button">Import JSON Backup</button>
-            <button class="button button-secondary" id="importSpreadsheetButton" type="button">Import Excel or CSV</button>
+            <button class="button button-secondary" id="importSpreadsheetButton" type="button">Import Previous Key Tracker</button>
           </div>
           <input class="hidden" id="backupFileInput" type="file" accept=".json,application/json">
           <input class="hidden" id="spreadsheetFileInput" type="file" accept=".xlsx,.xls,.csv,.html,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
@@ -482,7 +445,6 @@
             <button class="button button-danger" id="resetAllData" type="button">Reset All Data</button>
           </div>
           <p class="privacy-note">Data stays in this browser unless you download or import a file. The GitHub website does not receive your saved entries.</p>
-          <p class="version-note">Annual Key Tracker version 9</p>
         </section>
       </div>
     </section>
@@ -519,6 +481,6 @@
 
   <div class="toast-region" id="toastRegion" aria-live="polite"></div>
 
-  <script src="app.js?v=9"></script>
+  <script src="app.js"></script>
 </body>
 </html>
