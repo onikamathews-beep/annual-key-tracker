@@ -2,7 +2,7 @@
   'use strict';
 
   const STORAGE_KEY = 'annual-key-tracker-github-v1';
-  const APP_VERSION = 7;
+  const APP_SCHEMA = 8;
   const THEMES = ['sea-breeze', 'classic-blue', 'sage-stone', 'warm-sand', 'charcoal-gold'];
   const OUTCOMES = ['Contacted', 'Snoozed', 'Unable to Contact'];
   const WORKFLOWS = ['PA PPQ', 'Appeals PPQ'];
@@ -50,7 +50,7 @@
     const detected = detectTimeZone();
     const today = dateISOInTimeZone(new Date(), detected);
     return {
-      version: APP_VERSION,
+      schema: APP_SCHEMA,
       selectedDate: today,
       weekDate: today,
       customStart: `${today.slice(0, 7)}-01`,
@@ -180,7 +180,7 @@
       return {
         ...defaults,
         ...parsed,
-        version: APP_VERSION,
+        schema: APP_SCHEMA,
         selectedDate: defaults.selectedDate,
         weekDate: defaults.weekDate,
         settings,
@@ -196,6 +196,7 @@
   }
 
   state = loadState();
+  if (state && Object.prototype.hasOwnProperty.call(state, 'version')) delete state.version;
 
   function saveState(message = 'Saved locally') {
     try {
@@ -1341,7 +1342,7 @@
       state = {
         ...defaults,
         ...parsed,
-        version: APP_VERSION,
+        schema: APP_SCHEMA,
         days: importedDays,
         settings: importedSettings,
         selectedDate: todayISO(),
@@ -1383,42 +1384,100 @@
     return cell.w ?? '';
   }
 
+  function spreadsheetCellDisplay(sheet, row, column) {
+    const address = XLSX.utils.encode_cell({ r: row, c: column });
+    const cell = sheet[address];
+    if (!cell) return '';
+    if (cell.w !== undefined && cell.w !== null) return cell.w;
+    if (cell.v !== undefined && cell.v !== null) return cell.v;
+    return '';
+  }
+
   function cleanSpreadsheetText(value) {
     if (value instanceof Date) return value;
-    return String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+    return String(value ?? '')
+      .replace(/\u00a0/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function legacyHeaderRow(sheet, startColumn, range) {
+    const searchEnd = Math.min(range.e.r, 12);
+    let keysOnlyRow = -1;
+
+    for (let row = range.s.r; row <= searchEnd; row += 1) {
+      const keyHeader = String(cleanSpreadsheetText(spreadsheetCellDisplay(sheet, row, startColumn))).toLowerCase();
+      const contactHeader = String(cleanSpreadsheetText(spreadsheetCellDisplay(sheet, row, startColumn + 1))).toLowerCase();
+      const snoozedHeader = String(cleanSpreadsheetText(spreadsheetCellDisplay(sheet, row, startColumn + 2))).toLowerCase();
+
+      if (keyHeader === 'keys' || keyHeader === 'key') keysOnlyRow = row;
+      if (
+        (keyHeader === 'keys' || keyHeader === 'key') &&
+        contactHeader.includes('contact') &&
+        snoozedHeader.includes('snooz')
+      ) {
+        return row;
+      }
+    }
+
+    return keysOnlyRow;
+  }
+
+  function legacyDateFromRowTwo(sheet, startColumn) {
+    const address = XLSX.utils.encode_cell({ r: 1, c: startColumn });
+    const cell = sheet[address];
+    if (!cell) return null;
+
+    return (
+      parseDate(cell.v) ||
+      parseDate(cell.w) ||
+      parseDate(spreadsheetCellValue(sheet, 1, startColumn))
+    );
   }
 
   function legacyColumnGroups(sheet) {
     if (!sheet?.['!ref']) return [];
     const range = XLSX.utils.decode_range(sheet['!ref']);
     const groups = [];
-    for (let column = range.s.c; column <= range.e.c - 2; column += 1) {
-      const keyHeader = String(cleanSpreadsheetText(spreadsheetCellValue(sheet, 6, column))).toLowerCase();
-      const contactHeader = String(cleanSpreadsheetText(spreadsheetCellValue(sheet, 6, column + 1))).toLowerCase();
-      const snoozedHeader = String(cleanSpreadsheetText(spreadsheetCellValue(sheet, 6, column + 2))).toLowerCase();
-      if (keyHeader !== 'keys' || !contactHeader.includes('contact') || !snoozedHeader.includes('snooz')) continue;
 
-      const dateValue = spreadsheetCellValue(sheet, 1, column);
-      const dateCell = sheet[XLSX.utils.encode_cell({ r: 1, c: column })];
-      const date = parseDate(dateValue) || parseDate(dateCell?.w);
+    // The previous tracker always uses three-column day blocks:
+    // A:C, D:F, G:I, J:L, and M:O.
+    const finalDayStartColumn = Math.min(range.e.c - 2, 12);
+
+    for (let startColumn = 0; startColumn <= finalDayStartColumn; startColumn += 3) {
+      const date = legacyDateFromRowTwo(sheet, startColumn);
       if (!date) continue;
 
+      let headerRow = legacyHeaderRow(sheet, startColumn, range);
+
+      // The known template places Keys / Contact? / Snoozed? in Excel row 7.
+      // Use that location as a safe fallback when formatting prevents exact
+      // header text recognition.
+      if (headerRow < 0 && range.e.r >= 6) headerRow = 6;
+
       groups.push({
-        keyColumn: column,
-        contactColumn: column + 1,
-        snoozedColumn: column + 2,
+        keyColumn: startColumn,
+        contactColumn: startColumn + 1,
+        snoozedColumn: startColumn + 2,
         date,
-        workflow: normalizeWorkflow(spreadsheetCellValue(sheet, 2, column))
+        headerRow,
+        dataStartRow: headerRow + 1,
+        workflow: normalizeWorkflow(spreadsheetCellDisplay(sheet, 2, startColumn))
       });
     }
+
     return groups;
   }
 
   function legacyMarker(value) {
     if (value === true) return true;
     if (typeof value === 'number') return value !== 0;
+
     const text = String(cleanSpreadsheetText(value)).toLowerCase();
-    return ['x', 'yes', 'y', 'true', '1', 'checked', 'check'].includes(text);
+    return [
+      'x', 'yes', 'y', 'true', '1', 'checked', 'check',
+      'contacted', 'contact', 'snoozed', 'snooze'
+    ].includes(text);
   }
 
   function legacyResult(contactValue, snoozedValue) {
@@ -1426,35 +1485,48 @@
     const snoozedText = String(cleanSpreadsheetText(snoozedValue)).toLowerCase();
     const combined = `${contactText} ${snoozedText}`;
 
-    if (combined.includes('snooz')) return { outcome: 'Snoozed', marked: true };
-    if (combined.includes('unable') || combined.includes('no contact')) return { outcome: 'Unable to Contact', marked: true };
-    if (combined.includes('contact')) return { outcome: 'Contacted', marked: true };
-    if (legacyMarker(snoozedValue)) return { outcome: 'Snoozed', marked: true };
-    if (legacyMarker(contactValue)) return { outcome: 'Contacted', marked: true };
+    if (snoozedText.includes('snooz') || legacyMarker(snoozedValue)) {
+      return { outcome: 'Snoozed', marked: true };
+    }
+    if (contactText.includes('unable') || contactText.includes('no contact')) {
+      return { outcome: 'Unable to Contact', marked: true };
+    }
+    if (contactText.includes('contact') || legacyMarker(contactValue)) {
+      return { outcome: 'Contacted', marked: true };
+    }
+    if (combined.includes('unable') || combined.includes('no contact')) {
+      return { outcome: 'Unable to Contact', marked: true };
+    }
 
+    // In the old workbook, a key with neither Contact? nor Snoozed? marked
+    // represents Unable to Contact.
     return { outcome: 'Unable to Contact', marked: false };
   }
 
   function parseLegacyMonthlyWorkbook(workbook, file) {
     const records = [];
     let recognizedSheets = 0;
+    let recognizedDateBlocks = 0;
 
     workbook.SheetNames.forEach(sheetName => {
       const sheet = workbook.Sheets[sheetName];
       const groups = legacyColumnGroups(sheet);
-      if (groups.length < 2) return;
+      if (!groups.length) return;
+
       recognizedSheets += 1;
+      recognizedDateBlocks += groups.length;
       const range = XLSX.utils.decode_range(sheet['!ref']);
 
       groups.forEach(group => {
-        for (let row = 7; row <= range.e.r; row += 1) {
-          const rawKey = cleanSpreadsheetText(spreadsheetCellValue(sheet, row, group.keyColumn));
+        for (let row = group.dataStartRow; row <= range.e.r; row += 1) {
+          const rawKey = cleanSpreadsheetText(spreadsheetCellDisplay(sheet, row, group.keyColumn));
           if (!rawKey || rawKey instanceof Date) continue;
+
           const keys = keyTokens(rawKey);
           if (!keys.length) continue;
 
-          const contactValue = spreadsheetCellValue(sheet, row, group.contactColumn);
-          const snoozedValue = spreadsheetCellValue(sheet, row, group.snoozedColumn);
+          const contactValue = spreadsheetCellDisplay(sheet, row, group.contactColumn);
+          const snoozedValue = spreadsheetCellDisplay(sheet, row, group.snoozedColumn);
           const result = legacyResult(contactValue, snoozedValue);
           const sourceAddress = XLSX.utils.encode_cell({ r: row, c: group.keyColumn });
 
@@ -1475,8 +1547,9 @@
     });
 
     return {
-      detected: recognizedSheets > 0,
+      detected: recognizedDateBlocks > 0,
       recognizedSheets,
+      recognizedDateBlocks,
       employeeName: employeeNameFromFilename(file.name),
       records
     };
@@ -1485,16 +1558,22 @@
   function importLegacyMonthlyWorkbook(workbook, file) {
     const parsed = parseLegacyMonthlyWorkbook(workbook, file);
     if (!parsed.detected) return null;
-    if (!parsed.records.length) throw new Error('The older monthly tracker layout was recognized, but no keys were found.');
+
+    if (!parsed.records.length) {
+      throw new Error(
+        'The previous tracker layout was recognized, but no keys were found below the row-2 dates in the A:C, D:F, G:I, J:L, or M:O day blocks.'
+      );
+    }
 
     const dates = [...new Set(parsed.records.map(record => record.date))].sort();
     const unmarked = parsed.records.filter(record => !record.resultMarked).length;
     const nameText = parsed.employeeName ? ` for ${parsed.employeeName}` : '';
     const blankText = unmarked
-      ? `\n\n${unmarked.toLocaleString()} key${unmarked === 1 ? '' : 's'} have no Contact or Snoozed mark. Those will be imported as Unable to Contact.`
+      ? `\n\n${unmarked.toLocaleString()} key${unmarked === 1 ? '' : 's'} have neither Contact? nor Snoozed? marked. Those will import as Unable to Contact.`
       : '';
+
     const confirmed = confirm(
-      `Import ${parsed.records.length.toLocaleString()} key${parsed.records.length === 1 ? '' : 's'} across ${dates.length.toLocaleString()} date${dates.length === 1 ? '' : 's'}${nameText}?${blankText}\n\nOlder entries will not receive timestamps, so they will not affect the hourly chart.`
+      `Import ${parsed.records.length.toLocaleString()} key${parsed.records.length === 1 ? '' : 's'} across ${dates.length.toLocaleString()} populated date${dates.length === 1 ? '' : 's'}${nameText}?${blankText}\n\nOlder entries will not receive timestamps, so they will not affect the hourly chart.`
     );
     if (!confirmed) return { cancelled: true };
 
@@ -1507,6 +1586,7 @@
 
     let imported = 0;
     let alreadyImported = 0;
+
     parsed.records.forEach(record => {
       if (existingSourceRefs.has(record.sourceRef)) {
         alreadyImported += 1;
@@ -1670,7 +1750,7 @@
         });
       });
 
-      if (!imported) throw new Error('No recognizable activity rows were found. Use the older monthly Key Tracker workbook or include a Date column and a Keys or Count column.');
+      if (!imported) throw new Error('No recognizable activity rows were found. For the previous tracker, dates must be in row 2 and each day must use a three-column block: Keys, Contact?, and Snoozed? (A:C, D:F, G:I, J:L, or M:O).');
       if (filenameEmployee && !String(state.employeeName || '').trim()) state.employeeName = filenameEmployee;
       state.welcomeDone = true;
       saveState('Spreadsheet imported');
@@ -1950,7 +2030,21 @@ $('#stickyUndoTally').addEventListener('click', () => undoLastTallyForDate(today
     });
   }
 
+  function removeVisibleVersionLabels() {
+    document.title = 'Annual Key Tracker';
+    $$('[data-app-version], .app-version, .version-label, .version-number, #appVersion, #versionNumber')
+      .forEach(element => element.remove());
+
+    $$('header, aside, footer, .overlay').forEach(root => {
+      $$('span, small, p, div', root).forEach(element => {
+        const text = String(element.textContent || '').trim();
+        if (/^(?:version|v)\s*\d+(?:\.\d+)*$/i.test(text)) element.remove();
+      });
+    });
+  }
+
   function initialize() {
+    removeVisibleVersionLabels();
     ensureTodayModeDefault();
     $('#dashboardStart').value = startOfMonth();
     $('#dashboardEnd').value = endOfMonth();
@@ -1966,7 +2060,7 @@ $('#stickyUndoTally').addEventListener('click', () => undoLastTallyForDate(today
     if (!state.welcomeDone) showWelcome();
 
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('./service-worker.js').catch(error => console.warn('Service worker registration failed:', error));
+      navigator.serviceWorker.register('./service-worker.js?build=8').catch(error => console.warn('Service worker registration failed:', error));
     }
   }
 
