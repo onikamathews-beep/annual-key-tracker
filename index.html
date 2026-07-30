@@ -723,6 +723,7 @@ body.dashboard-focus .toolbar{margin-bottom:12px}
       </div>
       <h3 style="margin:22px 0 10px">Backup & Restore</h3>
       <div class="status-banner"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M5 21h14"/></svg><div><strong>Full tracker backup</strong><div class="subtle">One backup includes all years, entries, employee information, themes, and settings.</div></div></div>
+      <div class="status-banner" id="storageStatusBanner"><span>✓</span><div><strong id="storageStatusTitle">Browser storage ready</strong><div class="subtle" id="storageStatusText">Entries are saved automatically on this browser.</div></div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         <button class="btn" id="downloadBackupBtn">Download Backup</button>
         <button class="btn" id="restoreBackupBtn">Restore Backup</button>
@@ -854,9 +855,10 @@ const uid = () => (window.crypto && typeof window.crypto.randomUUID === 'functio
 function initialState(){
   const now = new Date();
   return {
-    version:13,
+    version:14,
     employeeName:'',
     setupComplete:false,
+    _savedAt:0,
     selectedDate:dateKey(now),
     selectedYear:now.getFullYear(),
     currentView:'today',
@@ -872,34 +874,138 @@ function initialState(){
   };
 }
 let state = loadState();
-// Preserve existing entries while moving older tracker versions to the simpler Today-first layout.
-const upgradedFromOlderLayout = Number(state.version || 0) < 4;
-state.version = 13;
-state.selectedDate = todayKey();
-state.selectedYear = new Date().getFullYear();
-if(upgradedFromOlderLayout) state.defaultView = 'today';
-state.currentView = state.defaultView || 'today';
 let pendingBatch = null;
 let highlightIds = [];
 let currentReportData = null;
 let pendingExcelImport = null;
-migrateEntryGroups();
-migrateTrackingModes();
-migrateIphSettings();
-migrateDailySchedules();
-migrateDisplayOptions();
+let indexedDbAvailable = false;
+let indexedDbSaveSucceeded = false;
+let localStorageSaveSucceeded = false;
+let storageWarningShown = false;
+let persistenceRequested = false;
+let indexedWriteChain = Promise.resolve();
 
+function prepareLoadedState(){
+  // Preserve existing entries while moving older tracker versions to the simpler Today-first layout.
+  const upgradedFromOlderLayout = Number(state.version || 0) < 4;
+  state.version = 14;
+  state.selectedDate = todayKey();
+  state.selectedYear = new Date().getFullYear();
+  if(upgradedFromOlderLayout) state.defaultView = 'today';
+  state.currentView = state.defaultView || 'today';
+  migrateEntryGroups();
+  migrateTrackingModes();
+  migrateIphSettings();
+  migrateDailySchedules();
+  migrateDisplayOptions();
+}
+prepareLoadedState();
+
+function mergeSavedState(saved){
+  const base=initialState();
+  return {...base,...saved,customTheme:{...DEFAULT_CUSTOM,...(saved?.customTheme||{})},iphSettings:{...base.iphSettings,...(saved?.iphSettings||{})},displayOptions:{...base.displayOptions,...(saved?.displayOptions||{})},scheduleDefaults:{...base.scheduleDefaults,...(saved?.scheduleDefaults||{})},entries:saved?.entries||{},dayMeta:saved?.dayMeta||{}};
+}
 function loadState(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
     if(!raw) return initialState();
-    const saved = JSON.parse(raw);
-    return {...initialState(),...saved,customTheme:{...DEFAULT_CUSTOM,...(saved.customTheme||{})},iphSettings:{...initialState().iphSettings,...(saved.iphSettings||{})},displayOptions:{...initialState().displayOptions,...(saved.displayOptions||{})},scheduleDefaults:{...initialState().scheduleDefaults,...(saved.scheduleDefaults||{})},entries:saved.entries||{},dayMeta:saved.dayMeta||{}};
+    return mergeSavedState(JSON.parse(raw));
   }catch(err){ console.error(err); return initialState(); }
 }
+function openTrackerDb(){
+  return new Promise((resolve,reject)=>{
+    if(!('indexedDB' in window)){reject(new Error('IndexedDB is unavailable'));return;}
+    const request=indexedDB.open('key_tally_tracker_db',1);
+    request.onupgradeneeded=()=>{
+      const db=request.result;
+      if(!db.objectStoreNames.contains('tracker_state')) db.createObjectStore('tracker_state',{keyPath:'id'});
+    };
+    request.onsuccess=()=>{indexedDbAvailable=true;resolve(request.result);};
+    request.onerror=()=>reject(request.error||new Error('Could not open browser database'));
+  });
+}
+async function readIndexedState(){
+  const db=await openTrackerDb();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction('tracker_state','readonly');
+    const req=tx.objectStore('tracker_state').get('main');
+    req.onsuccess=()=>{
+      try{resolve(req.result?.payload?JSON.parse(req.result.payload):null);}catch(err){reject(err);}
+    };
+    req.onerror=()=>reject(req.error||new Error('Could not read browser database'));
+    tx.oncomplete=()=>db.close();
+  });
+}
+async function writeIndexedSnapshot(snapshot,savedAt){
+  const db=await openTrackerDb();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction('tracker_state','readwrite');
+    tx.objectStore('tracker_state').put({id:'main',savedAt,payload:snapshot});
+    tx.oncomplete=()=>{indexedDbSaveSucceeded=true;db.close();updateStorageStatus();resolve();};
+    tx.onerror=()=>{db.close();reject(tx.error||new Error('Could not save browser database'));};
+    tx.onabort=()=>{db.close();reject(tx.error||new Error('Browser database save was cancelled'));};
+  });
+}
+function updateStorageStatus(message=''){
+  const title=$('#storageStatusTitle'),detail=$('#storageStatusText'),banner=$('#storageStatusBanner');
+  if(!title||!detail||!banner)return;
+  banner.classList.remove('locked');
+  if(indexedDbSaveSucceeded&&localStorageSaveSucceeded){
+    title.textContent='Saved in two browser storage systems';
+    detail.textContent=message||'Entries are mirrored in two browser storage systems on this device.';
+  }else if(indexedDbSaveSucceeded){
+    title.textContent='Saved in expanded browser storage';
+    detail.textContent=message||'Your tracker exceeded or could not use basic browser storage, so the larger browser database is being used.';
+  }else if(localStorageSaveSucceeded){
+    title.textContent='Saved on this browser';
+    detail.textContent=message||'Entries are saving locally. Download backups regularly for additional protection.';
+  }else{
+    banner.classList.add('locked');
+    title.textContent='Storage needs attention';
+    detail.textContent=message||'This browser is not allowing the tracker to confirm a permanent save. Download a backup before closing.';
+  }
+}
+function showStorageWarning(){
+  if(storageWarningShown)return;
+  storageWarningShown=true;
+  toast('The tracker could not confirm browser storage. Download a backup before closing.');
+}
 function saveState(){
-  try{ localStorage.setItem(STORAGE_KEY,JSON.stringify(state)); }
-  catch(err){ toast('Browser storage is unavailable. Download a backup to protect your work.'); }
+  state._savedAt=Date.now();
+  let snapshot;
+  try{snapshot=JSON.stringify(state);}catch(err){console.error(err);showStorageWarning();return false;}
+  localStorageSaveSucceeded=false;
+  try{
+    localStorage.setItem(STORAGE_KEY,snapshot);
+    localStorageSaveSucceeded=localStorage.getItem(STORAGE_KEY)===snapshot;
+  }catch(err){console.warn('Basic browser storage save failed',err);}
+  indexedWriteChain=indexedWriteChain.catch(()=>{}).then(()=>writeIndexedSnapshot(snapshot,state._savedAt)).catch(err=>{
+    console.warn('Expanded browser storage save failed',err);
+    updateStorageStatus();
+    if(!localStorageSaveSucceeded)showStorageWarning();
+  });
+  updateStorageStatus();
+  return localStorageSaveSucceeded||indexedDbAvailable;
+}
+async function hydrateFromIndexedDb(){
+  try{
+    const saved=await readIndexedState();
+    if(saved&&Number(saved._savedAt||0)>Number(state._savedAt||0)){
+      state=mergeSavedState(saved);
+      prepareLoadedState();
+    }
+    indexedDbSaveSucceeded=Boolean(saved);
+  }catch(err){console.warn('Expanded browser storage is unavailable',err);}
+}
+async function requestPersistentStorage(){
+  if(persistenceRequested)return;
+  persistenceRequested=true;
+  try{
+    if(navigator.storage?.persist){
+      const already=await navigator.storage.persisted?.();
+      if(!already) await navigator.storage.persist();
+    }
+  }catch(err){console.warn('Persistent storage request was not granted',err);}
 }
 function toast(message){
   const el=document.createElement('div'); el.className='toast'; el.textContent=message; $('#toastWrap').appendChild(el);
@@ -1468,7 +1574,7 @@ function downloadBackup(){
   a.href=URL.createObjectURL(blob); const safe=(state.employeeName||'Employee').replace(/[^a-z0-9]+/gi,'_'); a.download=`${safe}_Key_Tally_Tracker_Full_Backup_${todayKey()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),500); toast('Full backup downloaded.');
 }
 function restoreBackup(file){
-  const reader=new FileReader(); reader.onload=()=>{ try{ const data=JSON.parse(reader.result); if(!data.entries||!data.dayMeta) throw new Error('Invalid backup'); if(!confirm('Restore this backup? The tracker currently saved in this browser will be replaced.')) return; state={...initialState(),...data,customTheme:{...DEFAULT_CUSTOM,...(data.customTheme||{})}};state.version=13;migrateEntryGroups();migrateTrackingModes();migrateIphSettings();migrateDailySchedules();migrateDisplayOptions(); saveState(); applyTheme(state.theme); closeModal('settingsModal'); renderAll(); toast('Backup restored.'); }catch(e){ alert('This file could not be restored. Choose a valid Key Tracker backup JSON file.'); } }; reader.readAsText(file);
+  const reader=new FileReader(); reader.onload=()=>{ try{ const data=JSON.parse(reader.result); if(!data.entries||!data.dayMeta) throw new Error('Invalid backup'); if(!confirm('Restore this backup? The tracker currently saved in this browser will be replaced.')) return; state=mergeSavedState(data);state.version=14;migrateEntryGroups();migrateTrackingModes();migrateIphSettings();migrateDailySchedules();migrateDisplayOptions(); saveState(); applyTheme(state.theme); closeModal('settingsModal'); renderAll(); toast('Backup restored.'); }catch(e){ alert('This file could not be restored. Choose a valid Key Tracker backup JSON file.'); } }; reader.readAsText(file);
 }
 
 function excelCellText(ws,r,c){const cell=ws[XLSX.utils.encode_cell({r,c})];if(!cell||cell.v==null)return '';return String(cell.v).trim();}
@@ -1627,9 +1733,9 @@ $('#saveSettingsBtn').addEventListener('click',()=>{
   const name=$('#settingsName').value.trim();if(!name){toast('Employee name is required.');return;}
   const enableKeyTracker=$('#enableKeyTrackerToggle').checked,enableTallyCounter=$('#enableTallyCounterToggle').checked;
   if(!enableKeyTracker&&!enableTallyCounter){toast('Keep Key Tracker or Tally Counter turned on.');return;}
-  state.employeeName=name;state.defaultView=$('#defaultViewSelect').value;state.displayOptions={enableKeyTracker,enableTallyCounter,enableScheduleIph:$('#enableScheduleIphToggle').checked,showLiveIph:$('#showLiveIphToggle').checked,showDashboardPerformance:$('#showDashboardPerformanceToggle').checked,showHeaderOutcomes:$('#showHeaderOutcomesToggle').checked,showCelebrations:$('#showCelebrationsToggle').checked};saveState();closeModal('settingsModal');renderAll();toast('Settings saved.');
+  requestPersistentStorage();state.employeeName=name;state.defaultView=$('#defaultViewSelect').value;state.displayOptions={enableKeyTracker,enableTallyCounter,enableScheduleIph:$('#enableScheduleIphToggle').checked,showLiveIph:$('#showLiveIphToggle').checked,showDashboardPerformance:$('#showDashboardPerformanceToggle').checked,showHeaderOutcomes:$('#showHeaderOutcomesToggle').checked,showCelebrations:$('#showCelebrationsToggle').checked};saveState();closeModal('settingsModal');renderAll();toast('Settings saved.');
 });
-$('#finishSetupBtn').addEventListener('click',()=>{const name=$('#setupName').value.trim();if(!name){toast('Enter the employee name to continue.');return;}state.employeeName=name;state.theme=$('#setupTheme').value;state.setupComplete=true;state.currentView='today';state.defaultView='today';saveState();applyTheme(state.theme);closeModal('setupModal');renderAll();});
+$('#finishSetupBtn').addEventListener('click',()=>{const name=$('#setupName').value.trim();if(!name){toast('Enter the employee name to continue.');return;}requestPersistentStorage();state.employeeName=name;state.theme=$('#setupTheme').value;state.setupComplete=true;state.currentView='today';state.defaultView='today';saveState();applyTheme(state.theme);closeModal('setupModal');renderAll();});
 $('#cornerRadius').addEventListener('input',e=>{$('#radiusValue').textContent=e.target.value;state.customTheme.radius=Number(e.target.value);applyTheme('custom');renderThemeGrid();});
 $('#printBtn').addEventListener('click',()=>{const id={original:'originalView',today:'todayView',week:'weekView',dashboard:'dashboardView',custom:'customView'}[state.currentView];$('#'+id).classList.add('print-target');window.print();setTimeout(()=>$('#'+id).classList.remove('print-target'),300);});
 $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeModal(b.dataset.close)));
@@ -1647,18 +1753,33 @@ document.addEventListener('change',e=>{
   if(e.target.matches('[data-custom-color]')){state.customTheme[e.target.dataset.customColor]=e.target.value;applyTheme('custom');renderThemeGrid();renderAll();}
 });
 
+// Re-save immediately when the page is backgrounded or closed.
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveState();});
+window.addEventListener('pagehide',()=>saveState());
+window.addEventListener('beforeunload',()=>saveState());
+document.addEventListener('pointerdown',requestPersistentStorage,{once:true,capture:true});
+
 // Keep an open tracker aligned with the new day and automatically lock yesterday.
 let lastToday=todayKey();
 setInterval(()=>{const now=todayKey();if(now!==lastToday){lastToday=now;state.selectedDate=now;state.selectedYear=new Date().getFullYear();getMeta(now);saveState();renderAll();toast('A new workday has started. Yesterday is now locked.');return;}if(state.currentView==='today'&&!document.activeElement?.closest('#iphPanel'))refreshIphPanel();},60000);
 
-applyTheme(state.theme);
-state.currentView=state.currentView||state.defaultView||'today';
-if(state.setupComplete){
-  closeModal('setupModal');
-  setTimeout(renderAll,0);
-}else{
-  openModal('setupModal');
+async function startTracker(){
+  await hydrateFromIndexedDb();
+  applyTheme(state.theme);
+  state.currentView=state.currentView||state.defaultView||'today';
+  try{
+    const raw=localStorage.getItem(STORAGE_KEY);
+    localStorageSaveSucceeded=Boolean(raw);
+  }catch(err){localStorageSaveSucceeded=false;}
+  updateStorageStatus();
+  if(state.setupComplete){
+    closeModal('setupModal');
+    renderAll();
+  }else{
+    openModal('setupModal');
+  }
 }
+startTracker();
 }catch(err){
   console.error(err);
   var box=document.getElementById('setupModal');
