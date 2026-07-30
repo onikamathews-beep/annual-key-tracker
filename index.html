@@ -685,14 +685,19 @@ body.dashboard-focus .toolbar{margin-bottom:12px}
         <div class="field"><label for="settingsName">Employee Name</label><input id="settingsName"></div>
         <div class="field"><label for="defaultViewSelect">Opening View</label><select id="defaultViewSelect"><option value="today">Today</option><option value="week">Week</option><option value="dashboard">Dashboard</option><option value="original">Original Tracker</option></select></div>
       </div>
-      <h3 style="margin:22px 0 10px">Display Options</h3>
+      <h3 style="margin:22px 0 6px">Feature Controls</h3>
+      <div class="subtle" style="margin-bottom:10px">Turn tracker tools on or off to match the employee’s workflow. At least one tracking method must remain enabled.</div>
       <div class="feature-toggle-grid">
+        <label class="feature-toggle"><input type="checkbox" id="enableKeyTrackerToggle"><span><strong>Key Tracker</strong><small>Allow employees to paste or type the actual keys they worked.</small></span></label>
+        <label class="feature-toggle"><input type="checkbox" id="enableTallyCounterToggle"><span><strong>Tally Counter</strong><small>Allow employees to record interaction counts without entering individual keys.</small></span></label>
         <label class="feature-toggle"><input type="checkbox" id="enableScheduleIphToggle"><span><strong>Schedule &amp; IPH tools</strong><small>Require the daily schedule and calculate IPH, projections, and ratings.</small></span></label>
-        <label class="feature-toggle"><input type="checkbox" id="showLiveIphToggle"><span><strong>Live IPH &amp; Rating on Today</strong><small>Show the live performance panel near the top of the Today page.</small></span></label>
+        <label class="feature-toggle"><input type="checkbox" id="showLiveIphToggle"><span><strong>Live IPH &amp; Rating</strong><small>Show the live IPH and rating section on the Today page.</small></span></label>
         <label class="feature-toggle"><input type="checkbox" id="showDashboardPerformanceToggle"><span><strong>Performance on Dashboard</strong><small>Show the selected day’s IPH and rating section on the Dashboard.</small></span></label>
         <label class="feature-toggle"><input type="checkbox" id="showHeaderOutcomesToggle"><span><strong>Outcome counts in sticky header</strong><small>Show Contacted, Snoozed, and Unable to Contact beside Selected Day.</small></span></label>
         <label class="feature-toggle"><input type="checkbox" id="showCelebrationsToggle"><span><strong>Milestone celebrations</strong><small>Play a small animation the first time a new rating level is reached.</small></span></label>
       </div>
+      <h3 style="margin:22px 0 10px">Automatic Holidays</h3>
+      <div class="status-banner"><span>✓</span><div><strong>Recognized holidays are excluded automatically.</strong><div class="subtle">New Year’s Day, Martin Luther King Jr. Day, Memorial Day, observed Independence Day, Labor Day, Thanksgiving, and observed Christmas Day are locked and skipped when moving between workdays.</div></div></div>
       <h3 style="margin:22px 0 10px">Locked IPH Standards</h3>
       <div class="status-banner"><span>✓</span><div><strong>Queue goals and rating percentages are fixed.</strong><div class="subtle">Appeals PPQ is 11 IPH effective July 1, 2024. PA PPQ is 16 IPH effective February 1, 2024.</div></div></div>
       <div class="rating-ladder">
@@ -849,7 +854,7 @@ const uid = () => (window.crypto && typeof window.crypto.randomUUID === 'functio
 function initialState(){
   const now = new Date();
   return {
-    version:10,
+    version:13,
     employeeName:'',
     setupComplete:false,
     selectedDate:dateKey(now),
@@ -859,7 +864,7 @@ function initialState(){
     theme:'original',
     customTheme:{...DEFAULT_CUSTOM},
     iphSettings:{scheduleStart:'07:00',scheduleEnd:'15:30',breakStart:'',breakEnd:'',defaultGoal:0,strongPct:100,outstandingPct:120},
-    displayOptions:{enableScheduleIph:true,showLiveIph:true,showDashboardPerformance:true,showHeaderOutcomes:true,showCelebrations:true},
+    displayOptions:{enableKeyTracker:true,enableTallyCounter:true,enableScheduleIph:true,showLiveIph:true,showDashboardPerformance:true,showHeaderOutcomes:true,showCelebrations:true},
     scheduleDefaults:{shiftType:'8',start:'07:00',end:'15:30',expectedHubbleHours:6,break1Start:'09:00',mealStart:'11:30',break2Start:'13:45',targetRating:'Performing Well'},
     entries:{},
     dayMeta:{},
@@ -869,7 +874,7 @@ function initialState(){
 let state = loadState();
 // Preserve existing entries while moving older tracker versions to the simpler Today-first layout.
 const upgradedFromOlderLayout = Number(state.version || 0) < 4;
-state.version = 10;
+state.version = 13;
 state.selectedDate = todayKey();
 state.selectedYear = new Date().getFullYear();
 if(upgradedFromOlderLayout) state.defaultView = 'today';
@@ -903,9 +908,36 @@ function toast(message){
 function formatDate(s,opts={weekday:'long',month:'long',day:'numeric',year:'numeric'}){ return parseDate(s).toLocaleDateString(undefined,opts); }
 function isPast(s){ return s < todayKey(); }
 function isFuture(s){ return s > todayKey(); }
-function isLocked(s){ return isPast(s) || isFuture(s) || isWeekend(s); }
+function nthWeekdayDate(year,month,weekday,nth){
+  const d=new Date(year,month,1,12);const offset=(weekday-d.getDay()+7)%7;d.setDate(1+offset+(nth-1)*7);return dateKey(d);
+}
+function lastWeekdayDate(year,month,weekday){
+  const d=new Date(year,month+1,0,12);const offset=(d.getDay()-weekday+7)%7;d.setDate(d.getDate()-offset);return dateKey(d);
+}
+function observedFixedHoliday(year,month,day){
+  const d=new Date(year,month,day,12),weekday=d.getDay();if(weekday===6)d.setDate(d.getDate()-1);else if(weekday===0)d.setDate(d.getDate()+1);return dateKey(d);
+}
+function holidayListForYear(year){
+  return [
+    {date:observedFixedHoliday(year,0,1),name:"New Year’s Day"},
+    {date:nthWeekdayDate(year,0,1,3),name:'Martin Luther King Jr. Day'},
+    {date:lastWeekdayDate(year,4,1),name:'Memorial Day'},
+    {date:observedFixedHoliday(year,6,4),name:'Independence Day'},
+    {date:nthWeekdayDate(year,8,1,1),name:'Labor Day'},
+    {date:nthWeekdayDate(year,10,4,4),name:'Thanksgiving'},
+    {date:observedFixedHoliday(year,11,25),name:'Christmas Day'}
+  ];
+}
+function holidayInfo(s){
+  const y=parseDate(s).getFullYear();
+  for(const year of [y-1,y,y+1]){const found=holidayListForYear(year).find(h=>h.date===s);if(found)return found;}
+  return null;
+}
+function isHoliday(s){return Boolean(holidayInfo(s));}
+function isRegularWorkday(s){return !isWeekend(s)&&!isHoliday(s);}
+function isLocked(s){ return isPast(s) || isFuture(s) || !isRegularWorkday(s); }
 function addDays(s,n){ const d=parseDate(s); d.setDate(d.getDate()+n); return dateKey(d); }
-function addWorkdays(s,n){ let d=s,step=n>=0?1:-1,left=Math.abs(n); while(left){ d=addDays(d,step); if(!isWeekend(d)) left--; } return d; }
+function addWorkdays(s,n){ let d=s,step=n>=0?1:-1,left=Math.abs(n); while(left){ d=addDays(d,step); if(isRegularWorkday(d)) left--; } return d; }
 function startOfWeek(s){ const d=parseDate(s); const day=d.getDay(); const delta=day===0?-6:1-day; d.setDate(d.getDate()+delta); return dateKey(d); }
 function endOfWeek(s){ return addDays(startOfWeek(s),4); }
 function monthStart(s){ const d=parseDate(s); return dateKey(new Date(d.getFullYear(),d.getMonth(),1,12)); }
@@ -1014,7 +1046,7 @@ function summaryForRange(start,end){
   let entries=[]; let workdays=0; let activeDays=0;
   let d=start;
   while(d<=end){
-    if(!isWeekend(d)){
+    if(isRegularWorkday(d)){
       const dayEntries=getEntries(d);
       if(dayEntries.length){workdays++;activeDays++;}
       entries.push(...dayEntries.map(e=>({...e,date:d})));
@@ -1118,12 +1150,17 @@ function renderYears(){
   $('#yearSelect').innerHTML=arr.map(y=>`<option value="${y}" ${y===state.selectedYear?'selected':''}>${y}</option>`).join('');
 }
 function renderEntryArea(){
-  const s=state.selectedDate,entries=getEntries(s),meta=getMeta(s),locked=isLocked(s),weekend=isWeekend(s),future=isFuture(s),mode=effectiveTrackingMode(s),total=totalEntries(entries),workday=meta.dayType==='Work Day',dashboardFocus=state.currentView==='dashboard';
+  const s=state.selectedDate,entries=getEntries(s),meta=getMeta(s),locked=isLocked(s),weekend=isWeekend(s),holiday=holidayInfo(s),future=isFuture(s),total=totalEntries(entries),workday=meta.dayType==='Work Day'&&!holiday,dashboardFocus=state.currentView==='dashboard';
   document.body.classList.toggle('dashboard-focus',dashboardFocus);
-  const iphEnabled=state.displayOptions.enableScheduleIph!==false;
-  const scheduleReady=!iphEnabled||Boolean(meta.scheduleConfirmed),canChooseMode=!locked&&workday&&scheduleReady&&!meta.trackingModeLocked,canEnter=!locked&&workday&&scheduleReady&&Boolean(mode);
-  $('#entryTitle').textContent='Key Tracking';
-  $('#entrySubtitle').textContent=locked?'This day is read-only.':!scheduleReady?'Set today’s schedule first.':!mode?'Choose Key Tracker or Tally Counter to begin.':mode==='tally'?'Use a quick button or enter a custom +X amount.':'Paste the keys, then press Enter.';
+  const iphEnabled=state.displayOptions.enableScheduleIph!==false,keyEnabled=state.displayOptions.enableKeyTracker!==false,tallyEnabled=state.displayOptions.enableTallyCounter!==false;
+  const allowedModes=[keyEnabled?'keys':null,tallyEnabled?'tally':null].filter(Boolean);
+  const scheduleReady=!iphEnabled||Boolean(meta.scheduleConfirmed);
+  let mode=effectiveTrackingMode(s);
+  if(!mode&&!locked&&workday&&scheduleReady&&allowedModes.length===1){meta.trackingMode=allowedModes[0];meta.trackingModeLocked=true;mode=allowedModes[0];saveState();}
+  const activeModeEnabled=mode==='keys'?keyEnabled:mode==='tally'?tallyEnabled:false;
+  const canChooseMode=!locked&&workday&&scheduleReady&&!meta.trackingModeLocked,canEnter=!locked&&workday&&scheduleReady&&Boolean(mode)&&activeModeEnabled;
+  $('#entryTitle').textContent=mode==='tally'?'Tally Counter':'Key Tracking';
+  $('#entrySubtitle').textContent=locked?'This day is read-only.':!scheduleReady?'Set today’s schedule first.':!mode?'Choose a tracking method to begin.':!activeModeEnabled?'This tracking method has been turned off in Settings.':mode==='tally'?'Use a quick button or enter a custom +X amount.':'Paste the keys, then press Enter.';
   $('#ppqSelect').value=meta.ppq;$('#dayStatusSelect').value='Work Day';$('#dayStatusBadge').textContent='Work Day';
   $('#summaryDateLabel').textContent=`${formatDate(s)} • ${trackingModeLabel(mode)}`;$('#dayTotal').textContent=total;$('#dayPPQ').textContent=meta.ppq||'—';$('#tallyCurrentTotal').textContent=total;
   const perf=iphEnabled?scheduleIphMetrics(s):{valid:false},headerRating=$('#headerRating'),rating=perf.valid?perf.projectedRating:ratingForPercent(null);
@@ -1136,26 +1173,29 @@ function renderEntryArea(){
   $('#topIphArea').classList.toggle('hidden',!showLivePanel);$('#topIphArea').innerHTML=showLivePanel?iphPanelHTML(s):'';
   $('#entryArea').classList.toggle('hidden',locked||dashboardFocus);
 
-  const showMode=!dashboardFocus&&s===todayKey()&&!weekend&&!future&&workday&&scheduleReady&&!mode;
+  const showMode=!dashboardFocus&&s===todayKey()&&!weekend&&!holiday&&!future&&workday&&scheduleReady&&!mode&&allowedModes.length>1;
   $('#trackingModeCard').classList.toggle('hidden',!showMode);
-  const modeStatus=$('#trackingModeStatus');modeStatus.textContent=mode?trackingModeLabel(mode):'Choose one';modeStatus.style.color=mode?'var(--primary)':'var(--muted)';
-  $('#trackingModeSubtitle').textContent='Choose how you will gather keys for this workday.';
-  $$('[data-tracking-mode]').forEach(btn=>{btn.classList.toggle('selected',btn.dataset.trackingMode===mode);btn.disabled=!canChooseMode;});
-  $('#trackingModeHelp').textContent='Choose once for this date. The selection disappears after confirmation and returns on the next workday.';
+  const modeStatus=$('#trackingModeStatus');modeStatus.textContent=mode?trackingModeLabel(mode):allowedModes.length===1?trackingModeLabel(allowedModes[0]):'Choose one';modeStatus.style.color=mode?'var(--primary)':'var(--muted)';
+  $('#trackingModeSubtitle').textContent='Choose how you will gather activity for this workday.';
+  $$('[data-tracking-mode]').forEach(btn=>{const enabled=btn.dataset.trackingMode==='keys'?keyEnabled:tallyEnabled;btn.classList.toggle('hidden',!enabled);btn.classList.toggle('selected',btn.dataset.trackingMode===mode);btn.disabled=!canChooseMode||!enabled;});
+  $('#trackingModeHelp').textContent='Choose once for this date. When only one method is enabled, the tracker opens directly in that method.';
 
   $('#keyEntryField').classList.toggle('hidden',mode!=='keys');$('#tallyEntryField').classList.toggle('hidden',mode!=='tally');$('#addKeysBtn').classList.toggle('hidden',mode!=='keys');
   const lockBadge=$('#dateLockBadge');
   if(dashboardFocus){lockBadge.classList.remove('hidden');lockBadge.innerHTML='<span class="lock-icon">🔒</span> Dashboard View';lockBadge.style.color='var(--muted)';}
+  else if(holiday){lockBadge.classList.remove('hidden');lockBadge.innerHTML=`Holiday • ${esc(holiday.name)}`;lockBadge.style.color='var(--muted)';}
   else if(s===todayKey()&&!weekend){lockBadge.innerHTML='';lockBadge.classList.add('hidden');}
   else if(weekend){lockBadge.classList.remove('hidden');lockBadge.innerHTML='Weekend • Ignored';lockBadge.style.color='var(--muted)';}
   else if(isPast(s)){lockBadge.classList.remove('hidden');lockBadge.innerHTML='<span class="lock-icon">🔒</span> Locked';lockBadge.style.color='var(--muted)';}
   else{lockBadge.classList.remove('hidden');lockBadge.innerHTML='Future Date';lockBadge.style.color='var(--muted)';}
   let banner='';
-  if(weekend)banner=`<div class="status-banner weekend"><span>◷</span><div><strong>Weekend</strong><div class="subtle">Saturday and Sunday are ignored because the regular workweek is Monday through Friday.</div></div></div>`;
+  if(holiday)banner=`<div class="status-banner weekend"><span>✓</span><div><strong>${esc(holiday.name)}</strong><div class="subtle">This recognized holiday is excluded automatically from workday navigation, averages, schedules, and IPH.</div></div></div>`;
+  else if(weekend)banner=`<div class="status-banner weekend"><span>◷</span><div><strong>Weekend</strong><div class="subtle">Saturday and Sunday are ignored because the regular workweek is Monday through Friday.</div></div></div>`;
   else if(isPast(s))banner=`<div class="status-banner locked"><span>🔒</span><div><strong>This date is permanently locked.</strong><div class="subtle">Past entries remain available for viewing and reports, but cannot be changed.</div></div></div>`;
   else if(future)banner=`<div class="status-banner locked"><span>◷</span><div><strong>Future date</strong><div class="subtle">Interactions can only be entered on the current workday.</div></div></div>`;
   else if(!scheduleReady)banner=`<div class="status-banner"><span>1</span><div><strong>Set today’s schedule first.</strong><div class="subtle">The schedule is required before selecting Key Tracker or Tally Counter.</div></div></div>`;
   else if(!mode)banner=`<div class="status-banner"><span>${iphEnabled?'2':'1'}</span><div><strong>Choose today’s tracking method above.</strong><div class="subtle">The choice is saved for today and disappears after confirmation.</div></div></div>`;
+  else if(!activeModeEnabled)banner=`<div class="status-banner locked"><span>!</span><div><strong>${esc(trackingModeLabel(mode))} is turned off.</strong><div class="subtle">Turn it back on in Settings to continue using this method today.</div></div></div>`;
   $('#entryBanner').innerHTML=banner;
 
   $('#ppqSelect').disabled=locked||!workday;$('#dayStatusSelect').disabled=true;$('#keysInput').disabled=!canEnter||mode!=='keys';$('#defaultOutcome').disabled=!canEnter;$('#addKeysBtn').disabled=!canEnter||mode!=='keys';$('#clearInputBtn').disabled=!canEnter||mode!=='keys';$('#tallyCustomInput').disabled=!canEnter||mode!=='tally';$('#addCustomTallyBtn').disabled=!canEnter||mode!=='tally';$('#tallyOutcomeSelect').disabled=!canEnter||mode!=='tally';$$('[data-tally-add]').forEach(btn=>btn.disabled=!canEnter||mode!=='tally');
@@ -1173,9 +1213,9 @@ function renderOriginal(){
   const start=startOfWeek(state.selectedDate); const days=Array.from({length:5},(_,i)=>addDays(start,i));
   const sum=summaryForRange(start,addDays(start,4));
   const dayCols=days.map(d=>{
-    const entries=getEntries(d), meta=getMeta(d);
-    const rows=entries.length?sortedEntriesNewest(entries).map(e=>`<div class="sheet-key-row grouped-row ${groupClass(e)}" data-entry-id="${e.id}"><div>${esc(entryLabel(e))}<div class="activity-time">${esc(entryTimeLabel(e))}</div></div><div>${esc(e.outcome)}</div></div>`).join(''):`<div class="sheet-empty">${meta.dayType!=='Work Day'?esc(meta.dayType):'No keys entered'}</div>`;
-    return `<div class="day-sheet"><div class="sheet-day-head"><strong>${formatDate(d,{weekday:'long'})}</strong><span>${formatDate(d,{month:'short',day:'numeric',year:'numeric'})}${d===todayKey()?' • Today':''}</span></div><div class="sheet-ppq">${esc(meta.ppq)} • ${esc(trackingModeLabel(effectiveTrackingMode(d)))}${isPast(d)?' • Locked':''}</div>${dayStatsHTML(entries)}<div class="sheet-label-row"><div>Key / Tally</div><div>Outcome</div></div>${rows}</div>`;
+    const entries=getEntries(d), meta=getMeta(d),holiday=holidayInfo(d);
+    const rows=entries.length?sortedEntriesNewest(entries).map(e=>`<div class="sheet-key-row grouped-row ${groupClass(e)}" data-entry-id="${e.id}"><div>${esc(entryLabel(e))}<div class="activity-time">${esc(entryTimeLabel(e))}</div></div><div>${esc(e.outcome)}</div></div>`).join(''):`<div class="sheet-empty">${holiday?esc(holiday.name):meta.dayType!=='Work Day'?esc(meta.dayType):'No keys entered'}</div>`;
+    return `<div class="day-sheet"><div class="sheet-day-head"><strong>${formatDate(d,{weekday:'long'})}</strong><span>${formatDate(d,{month:'short',day:'numeric',year:'numeric'})}${d===todayKey()?' • Today':''}</span></div><div class="sheet-ppq">${holiday?`Holiday • ${esc(holiday.name)}`:`${esc(meta.ppq)} • ${esc(trackingModeLabel(effectiveTrackingMode(d)))}`}${isPast(d)?' • Locked':''}</div>${dayStatsHTML(entries)}<div class="sheet-label-row"><div>Key / Tally</div><div>Outcome</div></div>${rows}</div>`;
   }).join('');
   $('#originalView').innerHTML=`<div class="original-shell"><div class="original-grid">${dayCols}<div class="rollup-sheet"><div class="rollup-title">Weekly Rollup</div><div class="rollup-body">${rollupBlock('Week Total',sum)}${rollupBlock('PPQ Breakdown',sum,true)}<div class="rollup-block"><h4>Workweek</h4><div class="rollup-line"><span>Monday</span><strong>${formatDate(start,{month:'short',day:'numeric'})}</strong></div><div class="rollup-line"><span>Friday</span><strong>${formatDate(addDays(start,4),{month:'short',day:'numeric'})}</strong></div><div class="rollup-line"><span>Average / Worked Day</span><strong>${sum.avg.toFixed(1)}</strong></div></div></div></div></div></div>`;
 }
@@ -1220,8 +1260,8 @@ function outcomeBadge(o){ return `<span class="badge ${o==='Contacted'?'contact'
 function renderWeek(){
   const start=startOfWeek(state.selectedDate); const days=Array.from({length:5},(_,i)=>addDays(start,i));
   const cards=days.map(d=>{
-    const entries=getEntries(d),meta=getMeta(d),sum=summaryForRange(d,d);
-    return `<div class="card week-card ${d===todayKey()?'today':''}"><h3>${formatDate(d,{weekday:'long'})}</h3><div class="date">${formatDate(d,{month:'short',day:'numeric'})} • ${esc(meta.dayType)}</div><span class="badge">${esc(meta.ppq)} • ${esc(trackingModeLabel(effectiveTrackingMode(d)))}</span><div class="wk-number">${sum.total}</div><div class="subtle">interactions</div><div class="wk-list" style="margin-top:12px"><div><span>Contacted</span><strong>${sum.counts.Contacted}</strong></div><div><span>Snoozed</span><strong>${sum.counts.Snoozed}</strong></div><div><span>Unable</span><strong>${sum.counts['Unable to Contact']}</strong></div></div><button class="btn btn-sm" data-jump-date="${d}" style="width:100%;margin-top:13px">View Day</button></div>`;
+    const entries=getEntries(d),meta=getMeta(d),sum=summaryForRange(d,d),holiday=holidayInfo(d);
+    return `<div class="card week-card ${d===todayKey()?'today':''}"><h3>${formatDate(d,{weekday:'long'})}</h3><div class="date">${formatDate(d,{month:'short',day:'numeric'})} • ${holiday?esc(holiday.name):esc(meta.dayType)}</div><span class="badge">${holiday?'Holiday':`${esc(meta.ppq)} • ${esc(trackingModeLabel(effectiveTrackingMode(d)))}`}</span><div class="wk-number">${sum.total}</div><div class="subtle">interactions</div><div class="wk-list" style="margin-top:12px"><div><span>Contacted</span><strong>${sum.counts.Contacted}</strong></div><div><span>Snoozed</span><strong>${sum.counts.Snoozed}</strong></div><div><span>Unable</span><strong>${sum.counts['Unable to Contact']}</strong></div></div><button class="btn btn-sm" data-jump-date="${d}" style="width:100%;margin-top:13px">View Day</button></div>`;
   }).join('');
   const sum=summaryForRange(start,addDays(start,4));
   $('#weekView').innerHTML=`<div class="dashboard-grid"><div class="card kpi"><div class="kpi-label">Weekly Interactions</div><div class="kpi-value">${sum.total}</div><div class="kpi-sub">${sum.avg.toFixed(1)} average per worked day</div></div><div class="card kpi"><div class="kpi-label">Appeals PPQ</div><div class="kpi-value">${sum.ppq['Appeals PPQ']}</div><div class="kpi-sub">${pct(sum.ppq['Appeals PPQ'],sum.total)}% of week</div></div><div class="card kpi"><div class="kpi-label">PA PPQ</div><div class="kpi-value">${sum.ppq['PA PPQ']}</div><div class="kpi-sub">${pct(sum.ppq['PA PPQ'],sum.total)}% of week</div></div><div class="card kpi"><div class="kpi-label">Credited Outcomes</div><div class="kpi-value">${sum.total}</div><div class="kpi-sub">All three outcomes count as completed interactions</div></div></div><div class="week-cards">${cards}</div>`;
@@ -1299,7 +1339,7 @@ function drawDashboardOutcomeChart(id,sum){
 function drawDashboardDateChart(id,start,end,period){
   const c=dashboardCanvasSetup(id);if(!c)return;const {canvas,ctx,text,strong,primary,accent,border}=c;
   const days=[];let d=start;
-  while(d<=end){if(!isWeekend(d)){const total=totalEntries(getEntries(d));if(period==='week'||total>0)days.push({date:d,total});}d=addDays(d,1);}
+  while(d<=end){if(isRegularWorkday(d)){const total=totalEntries(getEntries(d));if(period==='week'||total>0)days.push({date:d,total});}d=addDays(d,1);}
   const max=Math.max(1,...days.map(x=>x.total)),left=48,right=16,top=18,bottom=44,w=canvas.width-left-right,h=canvas.height-top-bottom;
   ctx.strokeStyle=border;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(left,top);ctx.lineTo(left,top+h);ctx.lineTo(left+w,top+h);ctx.stroke();
   if(!days.length||!days.some(x=>x.total>0)){ctx.fillStyle=text;ctx.textAlign='center';ctx.font='13px Segoe UI, Arial';ctx.fillText('No worked days recorded in this period.',left+w/2,top+h/2);return;}
@@ -1309,7 +1349,7 @@ function drawDashboardDateChart(id,start,end,period){
 function renderCustom(){
   const range=state.customRange; const start=range.start,end=range.end; let cards=''; let d=end;
   if(start&&end&&start<=end){
-    while(d>=start){ if(!isWeekend(d)){ const sum=summaryForRange(d,d),meta=getMeta(d); cards+=`<div class="card custom-day"><div class="custom-day-head"><div><h3>${formatDate(d)}</h3><div class="subtle">${esc(meta.ppq)} • ${esc(meta.dayType)} • ${esc(trackingModeLabel(effectiveTrackingMode(d)))} ${isPast(d)?'• Locked':''}</div></div><button class="btn btn-sm" data-jump-date="${d}">View Day</button></div><div class="custom-day-grid"><div class="custom-day-stat"><span>Interactions</span><strong>${sum.total}</strong></div><div class="custom-day-stat"><span>Contacted</span><strong>${sum.counts.Contacted}</strong></div><div class="custom-day-stat"><span>Snoozed</span><strong>${sum.counts.Snoozed}</strong></div><div class="custom-day-stat"><span>Unable</span><strong>${sum.counts['Unable to Contact']}</strong></div></div></div>`;} d=addDays(d,-1); }
+    while(d>=start){ if(isRegularWorkday(d)){ const sum=summaryForRange(d,d),meta=getMeta(d); cards+=`<div class="card custom-day"><div class="custom-day-head"><div><h3>${formatDate(d)}</h3><div class="subtle">${esc(meta.ppq)} • ${esc(meta.dayType)} • ${esc(trackingModeLabel(effectiveTrackingMode(d)))} ${isPast(d)?'• Locked':''}</div></div><button class="btn btn-sm" data-jump-date="${d}">View Day</button></div><div class="custom-day-grid"><div class="custom-day-stat"><span>Interactions</span><strong>${sum.total}</strong></div><div class="custom-day-stat"><span>Contacted</span><strong>${sum.counts.Contacted}</strong></div><div class="custom-day-stat"><span>Snoozed</span><strong>${sum.counts.Snoozed}</strong></div><div class="custom-day-stat"><span>Unable</span><strong>${sum.counts['Unable to Contact']}</strong></div></div></div>`;} d=addDays(d,-1); }
   }
   $('#customView').innerHTML=`<div class="card panel" style="margin-bottom:12px"><div class="day-range"><div class="field"><label>Start Date</label><input type="date" id="customStart" value="${esc(start)}"></div><div class="field"><label>End Date</label><input type="date" id="customEnd" value="${esc(end)}"></div><button class="btn btn-primary" id="applyCustomRange">Apply Range</button></div></div><div class="custom-list">${cards||'<div class="card empty">Choose a valid date range.</div>'}</div>`;
 }
@@ -1332,8 +1372,8 @@ function switchView(view,save=true){
 function updateSelectedDate(s){ state.selectedDate=s; state.selectedYear=parseDate(s).getFullYear(); saveState(); renderAll(); }
 
 function chooseTrackingMode(mode){
-  const s=state.selectedDate,meta=getMeta(s);
-  if(!['keys','tally'].includes(mode)||isLocked(s)||meta.dayType!=='Work Day'||meta.trackingModeLocked) return;
+  const s=state.selectedDate,meta=getMeta(s),enabled=mode==='keys'?state.displayOptions.enableKeyTracker!==false:state.displayOptions.enableTallyCounter!==false;
+  if(!['keys','tally'].includes(mode)||!enabled||isLocked(s)||meta.dayType!=='Work Day'||meta.trackingModeLocked) return;
   const label=trackingModeLabel(mode);
   if(!confirm(`Use ${label} for ${formatDate(s,{weekday:'long',month:'short',day:'numeric'})}? This daily choice will lock after you confirm it.`)) return;
   meta.trackingMode=mode;
@@ -1346,7 +1386,7 @@ function chooseTrackingMode(mode){
 function addTally(amount){
   const s=state.selectedDate,meta=getMeta(s),mode=effectiveTrackingMode(s);
   const n=Math.floor(Number(amount));
-  if(isLocked(s)||meta.dayType!=='Work Day'||mode!=='tally') return;
+  if(state.displayOptions.enableTallyCounter===false||isLocked(s)||meta.dayType!=='Work Day'||mode!=='tally') return;
   if(!Number.isFinite(n)||n<1||n>999){toast('Enter a tally amount from 1 to 999.');return;}
   if(!state.entries[s]) state.entries[s]=[];
   const outcome=$('#tallyOutcomeSelect').value;
@@ -1359,7 +1399,7 @@ function addTally(amount){
 }
 
 function addEntries(keys,allowDuplicates=false){
-  const s=state.selectedDate, meta=getMeta(s); if(isLocked(s)||meta.dayType!=='Work Day'||effectiveTrackingMode(s)!=='keys') return;
+  const s=state.selectedDate, meta=getMeta(s); if(state.displayOptions.enableKeyTracker===false||isLocked(s)||meta.dayType!=='Work Day'||effectiveTrackingMode(s)!=='keys') return;
   const outcome=$('#defaultOutcome').value;
   const existing=getEntries(s); const existingNorm=new Set(existing.map(e=>normalizeKey(e.key)));
   const duplicates=keys.filter(k=>existingNorm.has(normalizeKey(k)));
@@ -1388,7 +1428,7 @@ function openDaySchedule(){
   $('#scheduleModalDate').textContent=formatDate(s);fillScheduleForm(base);$('#closeScheduleBtn').classList.toggle('hidden',!meta.scheduleConfirmed);openModal('scheduleModal');
 }
 function maybeOpenDailySchedule(){
-  if(state.displayOptions.enableScheduleIph===false||state.currentView==='dashboard'||!state.setupComplete||state.selectedDate!==todayKey()||isWeekend(state.selectedDate))return;const meta=getMeta(state.selectedDate);if(!meta.scheduleConfirmed&&!$('#setupModal').classList.contains('open'))openDaySchedule();
+  if(state.displayOptions.enableScheduleIph===false||state.currentView==='dashboard'||!state.setupComplete||state.selectedDate!==todayKey()||!isRegularWorkday(state.selectedDate))return;const meta=getMeta(state.selectedDate);if(!meta.scheduleConfirmed&&!$('#setupModal').classList.contains('open'))openDaySchedule();
 }
 function saveDaySchedule(){
   const s=state.selectedDate,meta=getMeta(s),schedule=readScheduleForm(),start=timeToMinutes(schedule.start),end=timeToMinutes(schedule.end);
@@ -1414,6 +1454,8 @@ function syncDisplayOptionControls(){
 }
 function openSettings(){
   $('#settingsName').value=state.employeeName;$('#defaultViewSelect').value=state.defaultView;
+  $('#enableKeyTrackerToggle').checked=state.displayOptions.enableKeyTracker!==false;
+  $('#enableTallyCounterToggle').checked=state.displayOptions.enableTallyCounter!==false;
   $('#enableScheduleIphToggle').checked=state.displayOptions.enableScheduleIph!==false;
   $('#showLiveIphToggle').checked=state.displayOptions.showLiveIph!==false;
   $('#showDashboardPerformanceToggle').checked=state.displayOptions.showDashboardPerformance!==false;
@@ -1426,7 +1468,7 @@ function downloadBackup(){
   a.href=URL.createObjectURL(blob); const safe=(state.employeeName||'Employee').replace(/[^a-z0-9]+/gi,'_'); a.download=`${safe}_Key_Tally_Tracker_Full_Backup_${todayKey()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),500); toast('Full backup downloaded.');
 }
 function restoreBackup(file){
-  const reader=new FileReader(); reader.onload=()=>{ try{ const data=JSON.parse(reader.result); if(!data.entries||!data.dayMeta) throw new Error('Invalid backup'); if(!confirm('Restore this backup? The tracker currently saved in this browser will be replaced.')) return; state={...initialState(),...data,customTheme:{...DEFAULT_CUSTOM,...(data.customTheme||{})}};state.version=10;migrateEntryGroups();migrateTrackingModes();migrateIphSettings();migrateDailySchedules();migrateDisplayOptions(); saveState(); applyTheme(state.theme); closeModal('settingsModal'); renderAll(); toast('Backup restored.'); }catch(e){ alert('This file could not be restored. Choose a valid Key Tracker backup JSON file.'); } }; reader.readAsText(file);
+  const reader=new FileReader(); reader.onload=()=>{ try{ const data=JSON.parse(reader.result); if(!data.entries||!data.dayMeta) throw new Error('Invalid backup'); if(!confirm('Restore this backup? The tracker currently saved in this browser will be replaced.')) return; state={...initialState(),...data,customTheme:{...DEFAULT_CUSTOM,...(data.customTheme||{})}};state.version=13;migrateEntryGroups();migrateTrackingModes();migrateIphSettings();migrateDailySchedules();migrateDisplayOptions(); saveState(); applyTheme(state.theme); closeModal('settingsModal'); renderAll(); toast('Backup restored.'); }catch(e){ alert('This file could not be restored. Choose a valid Key Tracker backup JSON file.'); } }; reader.readAsText(file);
 }
 
 function excelCellText(ws,r,c){const cell=ws[XLSX.utils.encode_cell({r,c})];if(!cell||cell.v==null)return '';return String(cell.v).trim();}
@@ -1582,7 +1624,10 @@ $('#reportScope').addEventListener('change',buildReport);$('#reportDetail').addE
 $('#downloadReportBtn').addEventListener('click',downloadReport);$('#copyReportBtn').addEventListener('click',copyReport);
 $('#downloadBackupBtn').addEventListener('click',downloadBackup);$('#restoreBackupBtn').addEventListener('click',()=>$('#restoreFileInput').click());$('#restoreFileInput').addEventListener('change',e=>{if(e.target.files[0])restoreBackup(e.target.files[0]);e.target.value='';});$('#importExcelBtn').addEventListener('click',()=>$('#excelFileInput').click());$('#excelFileInput').addEventListener('change',e=>{if(e.target.files[0])prepareExcelImport(e.target.files[0]);e.target.value='';});$('#confirmExcelImportBtn').addEventListener('click',importPendingExcel);
 $('#saveSettingsBtn').addEventListener('click',()=>{
-  const name=$('#settingsName').value.trim();if(!name){toast('Employee name is required.');return;}state.employeeName=name;state.defaultView=$('#defaultViewSelect').value;state.displayOptions={enableScheduleIph:$('#enableScheduleIphToggle').checked,showLiveIph:$('#showLiveIphToggle').checked,showDashboardPerformance:$('#showDashboardPerformanceToggle').checked,showHeaderOutcomes:$('#showHeaderOutcomesToggle').checked,showCelebrations:$('#showCelebrationsToggle').checked};saveState();closeModal('settingsModal');renderAll();toast('Settings saved.');
+  const name=$('#settingsName').value.trim();if(!name){toast('Employee name is required.');return;}
+  const enableKeyTracker=$('#enableKeyTrackerToggle').checked,enableTallyCounter=$('#enableTallyCounterToggle').checked;
+  if(!enableKeyTracker&&!enableTallyCounter){toast('Keep Key Tracker or Tally Counter turned on.');return;}
+  state.employeeName=name;state.defaultView=$('#defaultViewSelect').value;state.displayOptions={enableKeyTracker,enableTallyCounter,enableScheduleIph:$('#enableScheduleIphToggle').checked,showLiveIph:$('#showLiveIphToggle').checked,showDashboardPerformance:$('#showDashboardPerformanceToggle').checked,showHeaderOutcomes:$('#showHeaderOutcomesToggle').checked,showCelebrations:$('#showCelebrationsToggle').checked};saveState();closeModal('settingsModal');renderAll();toast('Settings saved.');
 });
 $('#finishSetupBtn').addEventListener('click',()=>{const name=$('#setupName').value.trim();if(!name){toast('Enter the employee name to continue.');return;}state.employeeName=name;state.theme=$('#setupTheme').value;state.setupComplete=true;state.currentView='today';state.defaultView='today';saveState();applyTheme(state.theme);closeModal('setupModal');renderAll();});
 $('#cornerRadius').addEventListener('input',e=>{$('#radiusValue').textContent=e.target.value;state.customTheme.radius=Number(e.target.value);applyTheme('custom');renderThemeGrid();});
