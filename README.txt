@@ -1,18 +1,17 @@
-# Annual Key Tracker — Update v9
+# Annual Key Tracker — Daily Email Report Update
 
 Upload every file in this folder to the root of the existing GitHub repository and allow GitHub to replace files with matching names.
 
-## Version 9 changes
+## Daily Email Report changes
 
-- Hides **Go to Today** whenever the selected date is already today or the selected week is the current week.
-- Shows **Go to Today** again after moving to another day or week.
-- Changes all entry grouping to alternate between only two coordinated colors per theme.
-- Adds a **Custom** option to the Color theme menu.
-- Selecting Custom opens a complete color picker for primary colors, surfaces, text, borders, statuses, and both alternating entry colors.
-- Custom color changes preview immediately and remain saved in the browser.
-- Adds a reset button that restores the custom palette to the Sea Breeze starting colors.
-- Keeps all Version 8 company fixed holidays and all prior tracker behavior.
-- Updates application and service-worker cache versions to Version 9.
+- Adds an **Email Daily Report** button at the top of the Today view.
+- The report always uses the date currently selected in the tracker, including today, yesterday, or another historical workday.
+- Generates an Excel workbook containing the selected day's summary and activity detail.
+- Adds saved Daily Email Report settings for **To**, **CC**, **Subject**, and **Email Message**.
+- Supports reusable subject/message placeholders: `{date}`, `{date_short}`, `{employee}`, `{total}`, and `{ppq}`.
+- Clicking the report button downloads the `.xlsx` file and opens a new email draft using the saved email details.
+- Because normal browser pages cannot silently attach a local file to Outlook, attach the downloaded workbook to the opened draft before sending.
+- Updates the service-worker cache so GitHub Pages picks up the new tracker version.
 
 ## GitHub upload
 
@@ -21,7 +20,7 @@ Upload every file in this folder to the root of the existing GitHub repository a
 3. Select every file from this folder.
 4. Allow GitHub to replace matching files.
 5. Commit the changes.
-6. Reopen `https://onikamathews-beep.github.io/annual-key-tracker/`.
-7. Press **Ctrl + Shift + R** once if an older version remains cached.
+6. Reopen your GitHub Pages tracker.
+7. Press **Ctrl + Shift + R** once if the older version remains cached.
 
-Tracker data remains in the browser’s local storage unless browser data is cleared or the site address changes.
+Your existing tracker entries and settings remain stored in the browser and are preserved by this update.

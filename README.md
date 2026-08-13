@@ -1,23 +1,24 @@
-# Annual Key Tracker update
+# Annual Key Tracker — Daily Email Report Update
 
-This update corrects the date controls and browser persistence.
+This update adds a selected-day Excel + email workflow to the existing Key & Tally Tracker.
 
-## Corrections
+## New feature
 
-- **Go to Today** is hidden whenever today is already selected.
-- Tapping the visible date field opens the device's native calendar.
-- The tracker no longer relies on the small `localStorage` limit for large imports.
-- Full tracker data is saved in IndexedDB, the browser's larger on-device database.
-- Small trackers still keep a local fallback when space allows.
-- Import completion now waits for the on-device save to finish.
-- If a browser blocks both storage methods, the message explains that the file was opened but not stored for the next visit.
-- Reset All Data clears both browser storage locations.
-- Existing locally saved data is migrated automatically.
+- **Email Daily Report** now appears at the top of the Today view.
+- It follows the date selected in the tracker instead of forcing the current date.
+- The generated Excel workbook includes employee, date, tracking method, PPQ, interaction totals, outcome totals, and the detailed Key/Tally activity table.
+- Report recipients, CC addresses, subject, and email message can be saved under **Settings → Daily Email Report**.
+- Subject and message templates support `{date}`, `{date_short}`, `{employee}`, `{total}`, and `{ppq}`.
+- The tracker downloads the workbook and opens the default email application with the saved recipients, subject, and message filled in.
+
+### Attachment note
+
+Web browsers do not allow an ordinary webpage to silently attach a local file to an Outlook draft. The tracker therefore downloads the Excel report first and opens the email draft immediately after. Attach the downloaded workbook before sending.
 
 ## Upload
 
-1. Extract the ZIP.
-2. Upload all eight files to the root of the `annual-key-tracker` GitHub repository.
-3. Allow GitHub to replace matching files.
-4. Commit with: `Fix calendar and browser saving`
-5. After GitHub Pages publishes, completely close the old tracker tab and reopen the site.
+1. Extract this ZIP.
+2. Upload all files in the folder to the root of the existing `annual-key-tracker` GitHub repository.
+3. Replace files with matching names.
+4. Commit the update.
+5. Reopen the GitHub Pages site and press **Ctrl + Shift + R** once if needed.

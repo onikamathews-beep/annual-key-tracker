@@ -1,9 +1,9 @@
-const CACHE_NAME = 'annual-key-tracker-v9';
+const CACHE_NAME = 'annual-key-tracker-v11';
 const LOCAL_ASSETS = [
   './',
   './index.html',
-  './styles.css?build=9',
-  './app.js?build=9',
+  './styles.css?build=11',
+  './app.js?build=11',
   './manifest.webmanifest',
   './icon-192.png',
   './icon-512.png'

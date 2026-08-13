@@ -341,6 +341,21 @@ body{transition:background .2s,color .2s}
 .iph-note{margin-top:11px;font-size:11px;color:var(--muted);line-height:1.45}
 .activity-head{display:flex;justify-content:space-between;gap:10px;align-items:end;flex-wrap:wrap;margin:0 0 8px}
 .activity-head h2{margin:0;font-size:17px}
+.activity-head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.daily-email-btn{display:inline-flex;align-items:center;gap:7px}
+.daily-email-btn svg{width:17px;height:17px;flex:0 0 auto}
+.email-settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.email-settings-grid .full{grid-column:1/-1}
+.email-template-help{margin-top:6px;font-size:12px;color:var(--muted);line-height:1.45}
+.workbook-settings{grid-column:1/-1;border:1px solid var(--border);background:var(--panel-2);border-radius:12px;padding:13px}
+.workbook-settings-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.workbook-settings-head strong{font-size:13px}
+.workbook-settings-actions{display:flex;gap:7px;flex-wrap:wrap}
+.workbook-group-title{font-size:11px;font-weight:850;text-transform:uppercase;letter-spacing:.45px;color:var(--muted);margin:13px 0 7px}
+.workbook-option-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.workbook-option{display:flex;align-items:center;gap:9px;padding:9px 10px;border:1px solid var(--border);background:var(--panel);border-radius:9px;cursor:pointer;font-size:12px;font-weight:750;color:var(--text)}
+.workbook-option input{width:17px;height:17px;margin:0;accent-color:var(--primary);flex:none}
+@media(max-width:720px){.email-settings-grid{grid-template-columns:1fr}.email-settings-grid .full{grid-column:auto}.workbook-settings{grid-column:auto}.workbook-option-grid{grid-template-columns:1fr}}
 .activity-time{white-space:nowrap;color:var(--muted);font-size:12px}
 @media(max-width:900px){.iph-metric-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:620px){.iph-metric-grid,.iph-target-grid{grid-template-columns:1fr}.iph-goal-control{width:100%}.iph-goal-control .field{width:100%}}
@@ -696,6 +711,38 @@ body.dashboard-focus .toolbar{margin-bottom:12px}
         <label class="feature-toggle"><input type="checkbox" id="showHeaderOutcomesToggle"><span><strong>Outcome counts in sticky header</strong><small>Show Contacted, Snoozed, and Unable to Contact beside Selected Day.</small></span></label>
         <label class="feature-toggle"><input type="checkbox" id="showCelebrationsToggle"><span><strong>Milestone celebrations</strong><small>Play a small animation the first time a new rating level is reached.</small></span></label>
       </div>
+      <h3 id="dailyEmailSettingsHeading" style="margin:22px 0 8px">Daily Email Report</h3>
+      <div class="subtle" style="margin-bottom:10px">These details are used by the Email Daily Report button on the Today view. You can use commas or semicolons between multiple email addresses.</div>
+      <div class="email-settings-grid">
+        <div class="field"><label for="dailyEmailTo">To</label><input id="dailyEmailTo" type="text" autocomplete="off" placeholder="name@company.com; another@company.com"></div>
+        <div class="field"><label for="dailyEmailCc">CC</label><input id="dailyEmailCc" type="text" autocomplete="off" placeholder="Optional"></div>
+        <div class="field full"><label for="dailyEmailSubject">Subject</label><input id="dailyEmailSubject" type="text" placeholder="Daily Key Report - {date}"><div class="email-template-help">Available placeholders: {date}, {date_short}, {employee}, {total}, {ppq}.</div></div>
+        <div class="field full"><label for="dailyEmailBody">Email Message</label><textarea id="dailyEmailBody" rows="5" placeholder="Attached is my daily report for {date}."></textarea><div class="email-template-help">The same placeholders can be used in the message.</div></div>
+        <div class="field full"><label for="dailyWorkbookName">Workbook File Name</label><input id="dailyWorkbookName" type="text" placeholder="Daily Keys - {employee} - {date}"><div class="email-template-help">Default: Daily Keys - {employee} - {date}. You can use {date}, {date_short}, {employee}, {total}, and {ppq}. The tracker adds .xlsx automatically.</div></div>
+        <div class="workbook-settings">
+          <div class="workbook-settings-head"><div><strong>Workbook Contents</strong><div class="subtle">Choose exactly what the Excel file includes. The default is Date (short) + Each Key/Tally only.</div></div><div class="workbook-settings-actions"><button class="btn btn-sm" id="selectAllWorkbookFieldsBtn" type="button">Select All</button><button class="btn btn-sm" id="clearWorkbookFieldsBtn" type="button">Clear All</button></div></div>
+          <div class="workbook-group-title">Daily summary</div>
+          <div class="workbook-option-grid">
+            <label class="workbook-option"><input type="checkbox" id="wbDateShort">Date (short)</label>
+            <label class="workbook-option"><input type="checkbox" id="wbEmployee">Employee</label>
+            <label class="workbook-option"><input type="checkbox" id="wbTrackingMethod">Tracking Method</label>
+            <label class="workbook-option"><input type="checkbox" id="wbSummaryPpq">PPQ Type</label>
+            <label class="workbook-option"><input type="checkbox" id="wbTotalInteractions">Total Interactions</label>
+            <label class="workbook-option"><input type="checkbox" id="wbContacted">Contacted</label>
+            <label class="workbook-option"><input type="checkbox" id="wbSnoozed">Snoozed</label>
+            <label class="workbook-option"><input type="checkbox" id="wbUnable">Unable to Contact</label>
+          </div>
+          <div class="workbook-group-title">Key / tally list</div>
+          <div class="workbook-option-grid">
+            <label class="workbook-option"><input type="checkbox" id="wbKeyTally">Each Key/Tally</label>
+            <label class="workbook-option"><input type="checkbox" id="wbTime">Time</label>
+            <label class="workbook-option"><input type="checkbox" id="wbDetailPpq">PPQ Type</label>
+            <label class="workbook-option"><input type="checkbox" id="wbOutcome">Outcome</label>
+            <label class="workbook-option"><input type="checkbox" id="wbInteractionCount">Interaction Count</label>
+          </div>
+        </div>
+      </div>
+      <div class="status-banner" style="margin-top:10px"><span>i</span><div><strong>The tracker prepares both pieces of the report.</strong><div class="subtle">It downloads the Excel workbook for the selected day and opens a new email with your saved recipients, subject, and message. Web browsers do not allow a normal website to silently attach a local file to Outlook, so attach the downloaded workbook to the opened draft before sending.</div></div></div>
       <h3 style="margin:22px 0 10px">Automatic Holidays</h3>
       <div class="status-banner"><span>✓</span><div><strong>Recognized holidays are excluded automatically.</strong><div class="subtle">New Year’s Day, Martin Luther King Jr. Day, Memorial Day, observed Independence Day, Labor Day, Thanksgiving, and observed Christmas Day are locked and skipped when moving between workdays.</div></div></div>
       <h3 style="margin:22px 0 10px">Locked IPH Standards</h3>
@@ -855,7 +902,7 @@ const uid = () => (window.crypto && typeof window.crypto.randomUUID === 'functio
 function initialState(){
   const now = new Date();
   return {
-    version:14,
+    version:16,
     employeeName:'',
     setupComplete:false,
     _savedAt:0,
@@ -867,6 +914,11 @@ function initialState(){
     customTheme:{...DEFAULT_CUSTOM},
     iphSettings:{scheduleStart:'07:00',scheduleEnd:'15:30',breakStart:'',breakEnd:'',defaultGoal:0,strongPct:100,outstandingPct:120},
     displayOptions:{enableKeyTracker:true,enableTallyCounter:true,enableScheduleIph:true,showLiveIph:true,showDashboardPerformance:true,showHeaderOutcomes:true,showCelebrations:true},
+    dailyEmail:{
+      to:'',cc:'',subject:'Daily Key Report - {date}',body:'Hello,\n\nAttached is my Key & Tally Tracker report for {date}.\n\nThank you,\n{employee}',
+      workbookName:'Daily Keys - {employee} - {date}',
+      workbookContents:{dateShort:true,employee:false,trackingMethod:false,summaryPpq:false,totalInteractions:false,contacted:false,snoozed:false,unable:false,keyTally:true,time:false,detailPpq:false,outcome:false,interactionCount:false}
+    },
     scheduleDefaults:{shiftType:'8',start:'07:00',end:'15:30',expectedHubbleHours:6,break1Start:'09:00',mealStart:'11:30',break2Start:'13:45',targetRating:'Performing Well'},
     entries:{},
     dayMeta:{},
@@ -888,7 +940,7 @@ let indexedWriteChain = Promise.resolve();
 function prepareLoadedState(){
   // Preserve existing entries while moving older tracker versions to the simpler Today-first layout.
   const upgradedFromOlderLayout = Number(state.version || 0) < 4;
-  state.version = 14;
+  state.version = 16;
   state.selectedDate = todayKey();
   state.selectedYear = new Date().getFullYear();
   if(upgradedFromOlderLayout) state.defaultView = 'today';
@@ -898,12 +950,13 @@ function prepareLoadedState(){
   migrateIphSettings();
   migrateDailySchedules();
   migrateDisplayOptions();
+  migrateDailyEmailSettings();
 }
 prepareLoadedState();
 
 function mergeSavedState(saved){
   const base=initialState();
-  return {...base,...saved,customTheme:{...DEFAULT_CUSTOM,...(saved?.customTheme||{})},iphSettings:{...base.iphSettings,...(saved?.iphSettings||{})},displayOptions:{...base.displayOptions,...(saved?.displayOptions||{})},scheduleDefaults:{...base.scheduleDefaults,...(saved?.scheduleDefaults||{})},entries:saved?.entries||{},dayMeta:saved?.dayMeta||{}};
+  return {...base,...saved,customTheme:{...DEFAULT_CUSTOM,...(saved?.customTheme||{})},iphSettings:{...base.iphSettings,...(saved?.iphSettings||{})},displayOptions:{...base.displayOptions,...(saved?.displayOptions||{})},dailyEmail:{...base.dailyEmail,...(saved?.dailyEmail||{})},scheduleDefaults:{...base.scheduleDefaults,...(saved?.scheduleDefaults||{})},entries:saved?.entries||{},dayMeta:saved?.dayMeta||{}};
 }
 function loadState(){
   try{
@@ -1219,6 +1272,10 @@ function migrateDailySchedules(){
 function migrateDisplayOptions(){
   state.displayOptions={...initialState().displayOptions,...(state.displayOptions||{})};
 }
+function migrateDailyEmailSettings(){
+  const defaults=initialState().dailyEmail,saved=state.dailyEmail||{};
+  state.dailyEmail={...defaults,...saved,workbookContents:{...defaults.workbookContents,...(saved.workbookContents||{})}};
+}
 
 function applyTheme(name){
   const base = name==='custom' ? state.customTheme : THEMES[name] || THEMES.original;
@@ -1359,7 +1416,7 @@ function refreshIphPanel(){
 function renderToday(){
   const s=state.selectedDate,entries=getEntries(s),displayEntries=sortedEntriesNewest(entries),locked=isLocked(s),mode=effectiveTrackingMode(s);
   const emptyMessage=locked?'No activity was recorded for this day.':mode?`No ${mode==='tally'?'tallies':'keys'} recorded for this day.`:'Choose Key Tracker or Tally Counter above to begin.';
-  $('#todayView').innerHTML=`<div class="activity-head"><div><h2>Activity History</h2><div class="subtle">Newest activity appears first.</div></div><span class="badge">${totalEntries(entries)} interactions</span></div><div class="card table-wrap"><table class="data-table"><thead><tr><th style="width:55px">#</th><th>Key / Tally</th><th style="width:105px">Time</th><th>PPQ Type</th><th>Outcome</th><th style="width:100px">Action</th></tr></thead><tbody>${displayEntries.length?displayEntries.map((e,i)=>`<tr data-entry-id="${e.id}" class="grouped-row ${groupClass(e)} ${highlightIds.includes(e.id)?'highlight':''}"><td>${i+1}</td><td><strong>${esc(entryLabel(e))}</strong>${e.kind==='tally'?`<span class="badge entry-type-badge">${entryCount(e)} interactions</span>`:''}</td><td class="activity-time">${esc(entryTimeLabel(e))}</td><td>${esc(e.ppq)}</td><td>${locked?outcomeBadge(e.outcome):`<select class="outcome-select" data-outcome-id="${e.id}">${OUTCOMES.map(o=>`<option ${o===e.outcome?'selected':''}>${o}</option>`).join('')}</select>`}</td><td>${locked?'<span class="subtle">Locked</span>':`<button class="btn btn-danger btn-sm" data-delete-id="${e.id}">Delete</button>`}</td></tr>`).join(''):`<tr><td colspan="6"><div class="empty">${esc(emptyMessage)}</div></td></tr>`}</tbody></table></div>`;
+  $('#todayView').innerHTML=`<div class="activity-head"><div><h2>Activity History</h2><div class="subtle">Newest activity appears first.</div></div><div class="activity-head-actions"><button class="btn btn-accent btn-sm daily-email-btn" id="dailyEmailReportBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 6h18v12H3z"/><path d="m4 7 8 6 8-6"/></svg><span>Email Daily Report</span></button><span class="badge">${totalEntries(entries)} interactions</span></div></div><div class="card table-wrap"><table class="data-table"><thead><tr><th style="width:55px">#</th><th>Key / Tally</th><th style="width:105px">Time</th><th>PPQ Type</th><th>Outcome</th><th style="width:100px">Action</th></tr></thead><tbody>${displayEntries.length?displayEntries.map((e,i)=>`<tr data-entry-id="${e.id}" class="grouped-row ${groupClass(e)} ${highlightIds.includes(e.id)?'highlight':''}"><td>${i+1}</td><td><strong>${esc(entryLabel(e))}</strong>${e.kind==='tally'?`<span class="badge entry-type-badge">${entryCount(e)} interactions</span>`:''}</td><td class="activity-time">${esc(entryTimeLabel(e))}</td><td>${esc(e.ppq)}</td><td>${locked?outcomeBadge(e.outcome):`<select class="outcome-select" data-outcome-id="${e.id}">${OUTCOMES.map(o=>`<option ${o===e.outcome?'selected':''}>${o}</option>`).join('')}</select>`}</td><td>${locked?'<span class="subtle">Locked</span>':`<button class="btn btn-danger btn-sm" data-delete-id="${e.id}">Delete</button>`}</td></tr>`).join(''):`<tr><td colspan="6"><div class="empty">${esc(emptyMessage)}</div></td></tr>`}</tbody></table></div>`;
   setTimeout(()=>{highlightIds=[];},2000);
 }
 function outcomeBadge(o){ return `<span class="badge ${o==='Contacted'?'contact':o==='Snoozed'?'snooze':'unable'}">${esc(o)}</span>`; }
@@ -1567,6 +1624,13 @@ function openSettings(){
   $('#showDashboardPerformanceToggle').checked=state.displayOptions.showDashboardPerformance!==false;
   $('#showHeaderOutcomesToggle').checked=state.displayOptions.showHeaderOutcomes!==false;
   $('#showCelebrationsToggle').checked=state.displayOptions.showCelebrations!==false;
+  $('#dailyEmailTo').value=state.dailyEmail?.to||'';
+  $('#dailyEmailCc').value=state.dailyEmail?.cc||'';
+  $('#dailyEmailSubject').value=state.dailyEmail?.subject||initialState().dailyEmail.subject;
+  $('#dailyEmailBody').value=state.dailyEmail?.body||initialState().dailyEmail.body;
+  $('#dailyWorkbookName').value=state.dailyEmail?.workbookName||initialState().dailyEmail.workbookName;
+  const workbookContents={...initialState().dailyEmail.workbookContents,...(state.dailyEmail?.workbookContents||{})};
+  Object.entries(WORKBOOK_FIELD_IDS).forEach(([key,id])=>{$('#'+id).checked=Boolean(workbookContents[key]);});
   syncDisplayOptionControls();renderThemeGrid();openModal('settingsModal');
 }
 function downloadBackup(){
@@ -1574,7 +1638,7 @@ function downloadBackup(){
   a.href=URL.createObjectURL(blob); const safe=(state.employeeName||'Employee').replace(/[^a-z0-9]+/gi,'_'); a.download=`${safe}_Key_Tally_Tracker_Full_Backup_${todayKey()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),500); toast('Full backup downloaded.');
 }
 function restoreBackup(file){
-  const reader=new FileReader(); reader.onload=()=>{ try{ const data=JSON.parse(reader.result); if(!data.entries||!data.dayMeta) throw new Error('Invalid backup'); if(!confirm('Restore this backup? The tracker currently saved in this browser will be replaced.')) return; state=mergeSavedState(data);state.version=14;migrateEntryGroups();migrateTrackingModes();migrateIphSettings();migrateDailySchedules();migrateDisplayOptions(); saveState(); applyTheme(state.theme); closeModal('settingsModal'); renderAll(); toast('Backup restored.'); }catch(e){ alert('This file could not be restored. Choose a valid Key Tracker backup JSON file.'); } }; reader.readAsText(file);
+  const reader=new FileReader(); reader.onload=()=>{ try{ const data=JSON.parse(reader.result); if(!data.entries||!data.dayMeta) throw new Error('Invalid backup'); if(!confirm('Restore this backup? The tracker currently saved in this browser will be replaced.')) return; state=mergeSavedState(data);state.version=16;migrateEntryGroups();migrateTrackingModes();migrateIphSettings();migrateDailySchedules();migrateDisplayOptions();migrateDailyEmailSettings(); saveState(); applyTheme(state.theme); closeModal('settingsModal'); renderAll(); toast('Backup restored.'); }catch(e){ alert('This file could not be restored. Choose a valid Key Tracker backup JSON file.'); } }; reader.readAsText(file);
 }
 
 function excelCellText(ws,r,c){const cell=ws[XLSX.utils.encode_cell({r,c})];if(!cell||cell.v==null)return '';return String(cell.v).trim();}
@@ -1642,6 +1706,118 @@ function importPendingExcel(){
     if(!state.dayMeta[rec.date])state.dayMeta[rec.date]={ppq,dayType:'Work Day',trackingMode:'keys',trackingModeLocked:true};
   });
   migrateTrackingModes();saveState();closeModal('excelImportModal');closeModal('settingsModal');renderAll();toast(`${added} historical interaction${added===1?'':'s'} imported${already?`; ${already} already present`:''}${skipped?`; ${skipped} skipped`:''}.`);pendingExcelImport=null;
+}
+
+const WORKBOOK_FIELD_IDS={
+  dateShort:'wbDateShort',employee:'wbEmployee',trackingMethod:'wbTrackingMethod',summaryPpq:'wbSummaryPpq',totalInteractions:'wbTotalInteractions',contacted:'wbContacted',snoozed:'wbSnoozed',unable:'wbUnable',keyTally:'wbKeyTally',time:'wbTime',detailPpq:'wbDetailPpq',outcome:'wbOutcome',interactionCount:'wbInteractionCount'
+};
+function emailList(value){
+  return String(value||'').split(/[;,]+/).map(v=>v.trim()).filter(Boolean);
+}
+function dailyEmailTokens(date){
+  const entries=getEntries(date),meta=getMeta(date);
+  return {
+    '{date}':formatDate(date,{month:'long',day:'numeric',year:'numeric'}),
+    '{date_short}':formatDate(date,{month:'2-digit',day:'2-digit',year:'numeric'}),
+    '{employee}':state.employeeName||'Employee',
+    '{total}':String(totalEntries(entries)),
+    '{ppq}':meta.ppq||''
+  };
+}
+function applyEmailTemplate(text,date){
+  let out=String(text||'');
+  Object.entries(dailyEmailTokens(date)).forEach(([token,value])=>{out=out.split(token).join(value);});
+  return out;
+}
+function workbookContentsFromSettings(){
+  const result={};Object.entries(WORKBOOK_FIELD_IDS).forEach(([key,id])=>{result[key]=Boolean($('#'+id)?.checked);});return result;
+}
+function selectedWorkbookContentCount(contents){return Object.values(contents||{}).filter(Boolean).length;}
+function safeWorkbookFileName(value){
+  let name=String(value||'').replace(/[<>:"/\\|?*\x00-\x1F]/g,'-').replace(/\s+/g,' ').replace(/[. ]+$/g,'').trim();
+  if(!name)name='Daily Keys';
+  if(!/\.xlsx$/i.test(name))name+='.xlsx';
+  return name;
+}
+function dailyWorkbookBlob(date){
+  const settings={...initialState().dailyEmail,...(state.dailyEmail||{})};
+  const contents={...initialState().dailyEmail.workbookContents,...(settings.workbookContents||{})};
+  const entries=sortedEntriesNewest(getEntries(date)).slice().reverse(),meta=getMeta(date),total=totalEntries(entries);
+  const counts={Contacted:0,Snoozed:0,'Unable to Contact':0};
+  entries.forEach(e=>{counts[e.outcome]=(counts[e.outcome]||0)+entryCount(e);});
+  const rows=[];
+  const summary=[];
+  if(contents.dateShort)summary.push(['Date',applyEmailTemplate('{date_short}',date)]);
+  if(contents.employee)summary.push(['Employee',state.employeeName||'Employee']);
+  if(contents.trackingMethod)summary.push(['Tracking Method',trackingModeLabel(effectiveTrackingMode(date))]);
+  if(contents.summaryPpq)summary.push(['PPQ Type',meta.ppq||'']);
+  if(contents.totalInteractions)summary.push(['Total Interactions',total]);
+  if(contents.contacted)summary.push(['Contacted',counts.Contacted]);
+  if(contents.snoozed)summary.push(['Snoozed',counts.Snoozed]);
+  if(contents.unable)summary.push(['Unable to Contact',counts['Unable to Contact']]);
+  rows.push(...summary);
+
+  const detailFields=[];
+  if(contents.keyTally)detailFields.push({header:'Each Key/Tally',value:e=>entryLabel(e)});
+  if(contents.time)detailFields.push({header:'Time',value:e=>entryTimeLabel(e)});
+  if(contents.detailPpq)detailFields.push({header:'PPQ Type',value:e=>e.ppq||meta.ppq||''});
+  if(contents.outcome)detailFields.push({header:'Outcome',value:e=>e.outcome||''});
+  if(contents.interactionCount)detailFields.push({header:'Interaction Count',value:e=>entryCount(e)});
+  if(detailFields.length){
+    if(rows.length)rows.push([]);
+    const headerRow=rows.length;
+    rows.push(detailFields.map(field=>field.header));
+    entries.forEach(e=>rows.push(detailFields.map(field=>field.value(e))));
+    const endCol=XLSX.utils.encode_col(detailFields.length-1);
+    const endRow=Math.max(headerRow+1,rows.length);
+    // Excel row numbers are 1-based; headerRow is zero-based in the AOA array.
+    var detailRange={headerRow,endCol,endRow};
+  }
+  if(!rows.length)rows.push(['No workbook contents selected']);
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  const colCount=Math.max(1,...rows.map(row=>row.length));
+  ws['!cols']=Array.from({length:colCount},(_,i)=>({wch:i===0?28:Math.min(42,Math.max(16,...rows.map(row=>String(row[i]??'').length+2)))}));
+  if(typeof detailRange!=='undefined'){
+    ws['!autofilter']={ref:`A${detailRange.headerRow+1}:${detailRange.endCol}${detailRange.endRow}`};
+    ws['!freeze']={xSplit:0,ySplit:detailRange.headerRow+1};
+  }
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Daily Report');
+  const bytes=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+  return new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+function downloadDailyWorkbook(date){
+  const settings={...initialState().dailyEmail,...(state.dailyEmail||{})};
+  const rendered=applyEmailTemplate(settings.workbookName||initialState().dailyEmail.workbookName,date);
+  const name=safeWorkbookFileName(rendered),blob=dailyWorkbookBlob(date);
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1200);
+  return name;
+}
+function createDailyEmailReport(){
+  const date=state.selectedDate,settings={...initialState().dailyEmail,...(state.dailyEmail||{})},to=emailList(settings.to),cc=emailList(settings.cc);
+  const contents={...initialState().dailyEmail.workbookContents,...(settings.workbookContents||{})};
+  if(!to.length){
+    toast('Add at least one Daily Email Report recipient in Settings.');
+    openSettings();
+    setTimeout(()=>document.getElementById('dailyEmailSettingsHeading')?.scrollIntoView({behavior:'smooth',block:'start'}),80);
+    return;
+  }
+  if(!selectedWorkbookContentCount(contents)){
+    toast('Choose at least one item to include in the workbook.');
+    openSettings();
+    setTimeout(()=>document.querySelector('.workbook-settings')?.scrollIntoView({behavior:'smooth',block:'center'}),80);
+    return;
+  }
+  const fileName=downloadDailyWorkbook(date);
+  const subject=applyEmailTemplate(settings.subject,date),body=applyEmailTemplate(settings.body,date);
+  const recipientPath=to.map(encodeURIComponent).join(',');
+  const params=[];
+  if(cc.length)params.push(`cc=${encodeURIComponent(cc.join(','))}`);
+  if(subject)params.push(`subject=${encodeURIComponent(subject)}`);
+  if(body)params.push(`body=${encodeURIComponent(body)}`);
+  const mailto=`mailto:${recipientPath}${params.length?'?'+params.join('&'):''}`;
+  toast(`Excel report downloaded: ${fileName}. Attach it to the email draft before sending.`);
+  setTimeout(()=>{window.location.href=mailto;},150);
 }
 
 function reportRange(scope){
@@ -1724,6 +1900,8 @@ $('#addDuplicateBtn').addEventListener('click',()=>{const b=pendingBatch;if(!b)r
 $('#viewDuplicateBtn').addEventListener('click',()=>{if(!pendingBatch)return;const norms=new Set(pendingBatch.duplicates.map(normalizeKey));highlightIds=getEntries(state.selectedDate).filter(e=>norms.has(normalizeKey(e.key))).map(e=>e.id);pendingBatch=null;closeModal('duplicateModal');switchView('today');renderToday();setTimeout(()=>document.querySelector('.highlight')?.scrollIntoView({behavior:'smooth',block:'center'}),60);});
 $('#settingsBtn').addEventListener('click',()=>{closeAppMenu();openSettings();});
 $('#enableScheduleIphToggle').addEventListener('change',syncDisplayOptionControls);
+$('#selectAllWorkbookFieldsBtn').addEventListener('click',()=>{Object.values(WORKBOOK_FIELD_IDS).forEach(id=>{$('#'+id).checked=true;});});
+$('#clearWorkbookFieldsBtn').addEventListener('click',()=>{Object.values(WORKBOOK_FIELD_IDS).forEach(id=>{$('#'+id).checked=false;});});
 $('#reportBtn').addEventListener('click',()=>{closeAppMenu();openModal('reportModal');buildReport();});
 $('#refreshReportBtn').addEventListener('click',buildReport);
 $('#reportScope').addEventListener('change',buildReport);$('#reportDetail').addEventListener('change',buildReport);
@@ -1733,7 +1911,7 @@ $('#saveSettingsBtn').addEventListener('click',()=>{
   const name=$('#settingsName').value.trim();if(!name){toast('Employee name is required.');return;}
   const enableKeyTracker=$('#enableKeyTrackerToggle').checked,enableTallyCounter=$('#enableTallyCounterToggle').checked;
   if(!enableKeyTracker&&!enableTallyCounter){toast('Keep Key Tracker or Tally Counter turned on.');return;}
-  requestPersistentStorage();state.employeeName=name;state.defaultView=$('#defaultViewSelect').value;state.displayOptions={enableKeyTracker,enableTallyCounter,enableScheduleIph:$('#enableScheduleIphToggle').checked,showLiveIph:$('#showLiveIphToggle').checked,showDashboardPerformance:$('#showDashboardPerformanceToggle').checked,showHeaderOutcomes:$('#showHeaderOutcomesToggle').checked,showCelebrations:$('#showCelebrationsToggle').checked};saveState();closeModal('settingsModal');renderAll();toast('Settings saved.');
+  requestPersistentStorage();state.employeeName=name;state.defaultView=$('#defaultViewSelect').value;state.displayOptions={enableKeyTracker,enableTallyCounter,enableScheduleIph:$('#enableScheduleIphToggle').checked,showLiveIph:$('#showLiveIphToggle').checked,showDashboardPerformance:$('#showDashboardPerformanceToggle').checked,showHeaderOutcomes:$('#showHeaderOutcomesToggle').checked,showCelebrations:$('#showCelebrationsToggle').checked};state.dailyEmail={to:$('#dailyEmailTo').value.trim(),cc:$('#dailyEmailCc').value.trim(),subject:$('#dailyEmailSubject').value.trim()||initialState().dailyEmail.subject,body:$('#dailyEmailBody').value,workbookName:$('#dailyWorkbookName').value.trim()||initialState().dailyEmail.workbookName,workbookContents:workbookContentsFromSettings()};saveState();closeModal('settingsModal');renderAll();toast('Settings saved.');
 });
 $('#finishSetupBtn').addEventListener('click',()=>{const name=$('#setupName').value.trim();if(!name){toast('Enter the employee name to continue.');return;}requestPersistentStorage();state.employeeName=name;state.theme=$('#setupTheme').value;state.setupComplete=true;state.currentView='today';state.defaultView='today';saveState();applyTheme(state.theme);closeModal('setupModal');renderAll();});
 $('#cornerRadius').addEventListener('input',e=>{$('#radiusValue').textContent=e.target.value;state.customTheme.radius=Number(e.target.value);applyTheme('custom');renderThemeGrid();});
@@ -1742,6 +1920,7 @@ $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeModal(b.datase
 $$('.modal-backdrop').forEach(m=>m.addEventListener('click',e=>{if(e.target!==m||m.id==='setupModal')return;if(m.id==='scheduleModal'&&!getMeta(state.selectedDate).scheduleConfirmed)return;closeModal(m.id);}));
 
 document.addEventListener('click',e=>{
+  if(e.target.closest('#dailyEmailReportBtn')){createDailyEmailReport();return;}
   const out=e.target.closest('[data-delete-id]'); if(out){const id=out.dataset.deleteId;if(isLocked(state.selectedDate))return;if(confirm('Delete this entry from today?')){state.entries[state.selectedDate]=getEntries(state.selectedDate).filter(x=>x.id!==id);saveState();renderAll();toast('Interaction deleted.');}return;}
   const jump=e.target.closest('[data-jump-date]'); if(jump){updateSelectedDate(jump.dataset.jumpDate);switchView('today');return;}
   const theme=e.target.closest('[data-theme]'); if(theme){state.theme=theme.dataset.theme;applyTheme(state.theme);renderThemeGrid();renderAll();return;}
