@@ -34,6 +34,7 @@ button{cursor:pointer}
 body{transition:background .2s,color .2s}
 .app{min-height:100vh}
 .topbar{position:sticky;top:0;z-index:40;background:linear-gradient(135deg,var(--primary-2),var(--primary));color:var(--on-primary-2);box-shadow:0 3px 14px rgba(0,0,0,.16)}
+body.topbar-unpinned .topbar{position:relative;top:auto}
 .topbar-inner{max-width:1700px;margin:auto;padding:14px 20px;display:flex;align-items:center;gap:16px;justify-content:space-between}
 .brand{display:flex;align-items:center;gap:12px;min-width:220px}
 .logo{width:42px;height:42px;border-radius:12px;background:color-mix(in srgb,var(--on-primary-2) 14%,transparent);display:grid;place-items:center;border:1px solid color-mix(in srgb,var(--on-primary-2) 28%,transparent)}
@@ -41,6 +42,10 @@ body{transition:background .2s,color .2s}
 .brand h1{font-size:19px;margin:0;font-weight:750;letter-spacing:.2px}
 .brand p{margin:2px 0 0;font-size:12px;opacity:.82}
 .top-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.topbar-tool{border:1px solid color-mix(in srgb,var(--on-primary-2) 26%,transparent);background:color-mix(in srgb,var(--on-primary-2) 13%,transparent);color:var(--on-primary-2);border-radius:10px;min-height:40px;padding:8px 10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;gap:7px}
+.topbar-tool:hover{background:color-mix(in srgb,var(--on-primary-2) 20%,transparent)}
+.topbar-tool svg{width:18px;height:18px;flex:none}
+.topbar-tool[aria-pressed="false"]{opacity:.82}
 .app-menu-wrap{position:relative}
 .app-menu-button{border:1px solid color-mix(in srgb,var(--on-primary-2) 26%,transparent);background:color-mix(in srgb,var(--on-primary-2) 13%,transparent);color:var(--on-primary-2);border-radius:10px;padding:9px 12px;font-weight:800;display:inline-flex;align-items:center;gap:8px;min-height:40px}
 .app-menu-button:hover{background:color-mix(in srgb,var(--on-primary-2) 20%,transparent)}
@@ -477,6 +482,52 @@ body.dashboard-focus .toolbar{margin-bottom:12px}
 @media(max-width:600px){.dashboard-period-metrics{grid-template-columns:1fr 1fr}.dashboard-outcome-row{grid-template-columns:110px 1fr 62px}.dashboard-period-section{padding:13px}.dashboard-period-canvas{height:205px}}
 @media(max-width:420px){.dashboard-period-metrics{grid-template-columns:1fr}.dashboard-outcome-row{grid-template-columns:1fr 58px}.dashboard-outcome-track{grid-column:1/-1;grid-row:2}}
 
+
+/* Minimized work window */
+.compact-tracker{display:none}
+body.compact-mode{min-width:250px}
+body.compact-mode .app{min-height:0}
+body.compact-mode .topbar,body.compact-mode .main{display:none!important}
+body.compact-mode .compact-tracker{display:block;padding:6px;background:var(--bg);color:var(--bg-text)}
+.compact-shell{max-width:760px;margin:0 auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:7px;box-shadow:0 3px 12px rgba(0,0,0,.08)}
+.compact-head{display:flex;align-items:center;justify-content:space-between;gap:7px;margin-bottom:6px}
+.compact-head-copy{min-width:0;display:flex;align-items:center;gap:7px;white-space:nowrap;overflow:hidden}
+.compact-head-copy strong{font-size:12px;overflow:hidden;text-overflow:ellipsis}
+.compact-head-copy span{font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+.compact-expand-btn{border:1px solid var(--border);background:var(--panel-2);color:var(--text);border-radius:7px;padding:5px 7px;font-size:11px;font-weight:800;white-space:nowrap}
+.compact-body{display:flex;align-items:stretch;gap:6px;min-width:0}
+.compact-entry-wrap{display:flex;gap:5px;flex:1 1 260px;min-width:0}
+.compact-entry{width:100%;min-width:70px;height:38px;min-height:38px;max-height:64px;resize:none;border:1px solid var(--border);background:var(--panel-2);color:var(--text);border-radius:8px;padding:8px 9px;outline:0;font-size:14px;line-height:20px}
+.compact-entry:focus{border-color:var(--primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--primary) 14%,transparent)}
+input.compact-entry{resize:none}
+.compact-add-btn{border:1px solid var(--primary);background:var(--primary);color:var(--on-primary);border-radius:8px;padding:7px 10px;font-size:12px;font-weight:850;white-space:nowrap;min-height:38px}
+.compact-add-btn:disabled{opacity:.48;cursor:not-allowed}
+.compact-stats{display:flex;gap:5px;flex:0 0 auto}
+.compact-stat{min-width:72px;border:1px solid var(--border);background:var(--panel-2);border-radius:8px;padding:5px 7px;display:flex;flex-direction:column;justify-content:center}
+.compact-stat span{font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:800;white-space:nowrap}
+.compact-stat strong{font-size:16px;line-height:1.15;margin-top:2px;white-space:nowrap}
+.compact-stat .rating-value{font-size:11px;padding:3px 6px;margin-top:3px;max-width:122px;overflow:hidden;text-overflow:ellipsis}
+.compact-empty-note{font-size:11px;color:var(--muted);padding:7px 4px}
+@media(max-width:520px){
+  .topbar-tool .topbar-tool-label,.app-menu-button>span{display:none}
+  .topbar-tool,.app-menu-button{width:39px;padding:8px}
+  .compact-body{flex-wrap:wrap}
+  .compact-entry-wrap{flex-basis:100%}
+  .compact-stats{width:100%}
+  .compact-stat{flex:1;min-width:0}
+}
+@media(max-width:355px){
+  .brand h1{display:none}
+  .brand{min-width:auto}
+  .compact-shell{padding:5px}
+  .compact-head{margin-bottom:4px}
+  .compact-body{gap:4px}
+  .compact-entry-wrap{gap:4px}
+  .compact-entry{height:34px;min-height:34px;padding:6px 7px;font-size:13px}
+  .compact-add-btn{min-height:34px;padding:6px 8px}
+  .compact-stat{padding:4px 6px}
+}
+
 @media print{
  body{background:#fff}
  .topbar,.nav-tabs,.toolbar,.entry-layout,.no-print{display:none!important}
@@ -498,6 +549,14 @@ body.dashboard-focus .toolbar{margin-bottom:12px}
         <div><h1>Key &amp; Tally Tracker</h1></div>
       </div>
       <div class="top-actions">
+        <button class="topbar-tool" id="topbarPinBtn" type="button" aria-pressed="true" title="Unpin top bar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="m9 4 6 0 1 5 3 3v2H5v-2l3-3 1-5Z"/><path d="M12 14v7"/></svg>
+          <span class="topbar-tool-label" id="topbarPinLabel">Unpin</span>
+        </button>
+        <button class="topbar-tool" id="compactModeBtn" type="button" title="Minimize tracker">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/></svg>
+          <span class="topbar-tool-label">Minimize</span>
+        </button>
         <div class="app-menu-wrap">
           <button class="app-menu-button" id="appMenuBtn" type="button" aria-expanded="false" aria-controls="appMenu">
             <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
@@ -535,6 +594,27 @@ body.dashboard-focus .toolbar{margin-bottom:12px}
       </div>
     </div>
   </header>
+
+  <section class="compact-tracker" id="compactTracker" aria-label="Minimized Key and Tally Tracker">
+    <div class="compact-shell">
+      <div class="compact-head">
+        <div class="compact-head-copy"><strong id="compactTrackerMode">Key Tracker</strong><span id="compactTrackerDate">Today</span></div>
+        <button class="compact-expand-btn" id="expandTrackerBtn" type="button">Expand</button>
+      </div>
+      <div class="compact-body" id="compactTrackerBody">
+        <div class="compact-entry-wrap" id="compactEntryWrap">
+          <textarea class="compact-entry" id="compactKeysInput" rows="1" placeholder="Enter keys" aria-label="Compact key entry"></textarea>
+          <input class="compact-entry hidden" id="compactTallyInput" type="number" min="1" max="999" inputmode="numeric" placeholder="Tally" aria-label="Compact tally amount">
+          <button class="compact-add-btn" id="compactAddBtn" type="button">Add Keys</button>
+        </div>
+        <div class="compact-stats" id="compactStats">
+          <div class="compact-stat" id="compactCountStat"><span id="compactCountLabel">Keys Worked</span><strong id="compactWorkedCount">0</strong></div>
+          <div class="compact-stat" id="compactRatingStat"><span>Rating</span><strong id="compactRating" class="rating-value rating-not-started">—</strong></div>
+        </div>
+        <div class="compact-empty-note hidden" id="compactEmptyNote">Choose at least one minimized-view item in Settings.</div>
+      </div>
+    </div>
+  </section>
 
   <main class="main">
     <div class="toolbar">
@@ -710,6 +790,15 @@ body.dashboard-focus .toolbar{margin-bottom:12px}
         <label class="feature-toggle"><input type="checkbox" id="showDashboardPerformanceToggle"><span><strong>Performance on Dashboard</strong><small>Show the selected day’s IPH and rating section on the Dashboard.</small></span></label>
         <label class="feature-toggle"><input type="checkbox" id="showHeaderOutcomesToggle"><span><strong>Outcome counts in sticky header</strong><small>Show Contacted, Snoozed, and Unable to Contact beside Selected Day.</small></span></label>
         <label class="feature-toggle"><input type="checkbox" id="showCelebrationsToggle"><span><strong>Milestone celebrations</strong><small>Play a small animation the first time a new rating level is reached.</small></span></label>
+      </div>
+      <h3 style="margin:22px 0 6px">Window &amp; Minimized View</h3>
+      <div class="subtle" style="margin-bottom:10px">Unpin the top bar when you do not want it following you while you scroll. Minimized View hides the full tracker and keeps only the items you choose below, so the browser window can stay very small while you work.</div>
+      <div class="feature-toggle-grid">
+        <label class="feature-toggle"><input type="checkbox" id="topbarPinnedToggle"><span><strong>Keep top bar pinned</strong><small>Keep the blue top bar stuck to the top while scrolling. You can also toggle this from the pin button in the top bar.</small></span></label>
+        <label class="feature-toggle"><input type="checkbox" id="compactShowEntryToggle"><span><strong>Entry box when minimized</strong><small>Show the Key entry box or Tally amount box in Minimized View.</small></span></label>
+        <label class="feature-toggle"><input type="checkbox" id="compactShowAddToggle"><span><strong>Add button when minimized</strong><small>Show Add Keys or Add Tally beside the minimized entry box. The entry box must also be visible for this button to submit.</small></span></label>
+        <label class="feature-toggle"><input type="checkbox" id="compactShowCountToggle"><span><strong>Worked count when minimized</strong><small>Show how many interactions have been worked so far for the selected day.</small></span></label>
+        <label class="feature-toggle"><input type="checkbox" id="compactShowRatingToggle"><span><strong>Current rating when minimized</strong><small>Show the live projected rating in the minimized window when Schedule &amp; IPH is enabled.</small></span></label>
       </div>
       <h3 id="dailyEmailSettingsHeading" style="margin:22px 0 8px">Daily Email Report</h3>
       <div class="subtle" style="margin-bottom:10px">These details are used by the Email Daily Report button on the Today view. Download Workbook uses the workbook settings below without opening email. You can use commas or semicolons between multiple email addresses.</div>
@@ -903,7 +992,7 @@ const uid = () => (window.crypto && typeof window.crypto.randomUUID === 'functio
 function initialState(){
   const now = new Date();
   return {
-    version:19,
+    version:20,
     employeeName:'',
     setupComplete:false,
     _savedAt:0,
@@ -914,7 +1003,8 @@ function initialState(){
     theme:'original',
     customTheme:{...DEFAULT_CUSTOM},
     iphSettings:{scheduleStart:'07:00',scheduleEnd:'15:30',breakStart:'',breakEnd:'',defaultGoal:0,strongPct:100,outstandingPct:120},
-    displayOptions:{enableKeyTracker:true,enableTallyCounter:true,enableScheduleIph:true,showLiveIph:true,showDashboardPerformance:true,showHeaderOutcomes:true,showCelebrations:true},
+    displayOptions:{enableKeyTracker:true,enableTallyCounter:true,enableScheduleIph:true,showLiveIph:true,showDashboardPerformance:true,showHeaderOutcomes:true,showCelebrations:true,topbarPinned:true,compactShowEntry:true,compactShowAdd:true,compactShowCount:true,compactShowRating:true},
+    compactMode:false,
     dailyEmail:{
       to:'',cc:'',subject:'Daily Key Reports - {employee} - {date}',body:'Hello,\n\nAttached is the daily key report for {employee} for {date}.',
       launchMode:'prefill',
@@ -1302,14 +1392,65 @@ function applyTheme(name){
   state.theme=name; saveState();
 }
 
+function applyWorkspaceLayout(){
+  const pinned=state.displayOptions.topbarPinned!==false;
+  document.body.classList.toggle('topbar-unpinned',!pinned);
+  document.body.classList.toggle('compact-mode',state.compactMode===true);
+  const pinBtn=$('#topbarPinBtn'),pinLabel=$('#topbarPinLabel');
+  if(pinBtn){pinBtn.setAttribute('aria-pressed',String(pinned));pinBtn.title=pinned?'Unpin top bar':'Pin top bar';}
+  if(pinLabel)pinLabel.textContent=pinned?'Unpin':'Pin';
+}
+function setCompactMode(on){
+  state.compactMode=Boolean(on);
+  if(state.compactMode) state.currentView='today';
+  closeAppMenu();saveState();renderAll();
+  if(state.compactMode)setTimeout(()=>{const mode=effectiveTrackingMode(state.selectedDate);const target=mode==='tally'?$('#compactTallyInput'):$('#compactKeysInput');if(target&&!target.classList.contains('hidden')&&!target.disabled)target.focus();},40);
+}
+function renderCompactTracker(){
+  const s=state.selectedDate,entries=getEntries(s),meta=getMeta(s),mode=effectiveTrackingMode(s),total=totalEntries(entries);
+  const iphEnabled=state.displayOptions.enableScheduleIph!==false;
+  const perf=iphEnabled?scheduleIphMetrics(s):{valid:false};
+  const rating=perf.valid?perf.projectedRating:ratingForPercent(null);
+  const workday=meta.dayType==='Work Day'&&!holidayInfo(s),scheduleReady=!iphEnabled||Boolean(meta.scheduleConfirmed);
+  const modeEnabled=mode==='keys'?state.displayOptions.enableKeyTracker!==false:mode==='tally'?state.displayOptions.enableTallyCounter!==false:false;
+  const canEnter=!isLocked(s)&&workday&&scheduleReady&&Boolean(mode)&&modeEnabled;
+  $('#compactTrackerMode').textContent=mode==='tally'?'Tally Counter':mode==='keys'?'Key Tracker':'Tracker';
+  $('#compactTrackerDate').textContent=s===todayKey()?'Today':formatDate(s,{month:'short',day:'numeric'});
+  $('#compactWorkedCount').textContent=total;$('#compactCountLabel').textContent=mode==='tally'?'Interactions Worked':'Keys Worked';
+  const ratingEl=$('#compactRating');ratingEl.textContent=rating.name;ratingEl.className=`rating-value ${rating.className}`;
+  const showEntry=state.displayOptions.compactShowEntry!==false,showAdd=state.displayOptions.compactShowAdd!==false,showCount=state.displayOptions.compactShowCount!==false,showRating=state.displayOptions.compactShowRating!==false&&iphEnabled;
+  $('#compactKeysInput').classList.toggle('hidden',!showEntry||mode==='tally');
+  $('#compactTallyInput').classList.toggle('hidden',!showEntry||mode!=='tally');
+  $('#compactAddBtn').classList.toggle('hidden',!showAdd);
+  $('#compactCountStat').classList.toggle('hidden',!showCount);
+  $('#compactRatingStat').classList.toggle('hidden',!showRating);
+  $('#compactEntryWrap').classList.toggle('hidden',!showEntry&&!showAdd);
+  $('#compactStats').classList.toggle('hidden',!showCount&&!showRating);
+  const nothing=!showEntry&&!showAdd&&!showCount&&!showRating;$('#compactEmptyNote').classList.toggle('hidden',!nothing);
+  $('#compactKeysInput').disabled=!canEnter||mode!=='keys';$('#compactTallyInput').disabled=!canEnter||mode!=='tally';
+  const addBtn=$('#compactAddBtn');addBtn.textContent=mode==='tally'?'Add Tally':'Add Keys';addBtn.disabled=!canEnter||!showEntry||!['keys','tally'].includes(mode);
+  $('#compactKeysInput').placeholder=canEnter?'Enter or paste keys':'Entry unavailable';
+  $('#compactTallyInput').placeholder=canEnter?'Tally amount':'Unavailable';
+}
+function clearCompactEntryDraft(){
+  const k=$('#compactKeysInput'),t=$('#compactTallyInput');if(k)k.value='';if(t)t.value='';
+}
+function submitCompactEntry(){
+  const mode=effectiveTrackingMode(state.selectedDate);
+  if(mode==='tally'){const input=$('#compactTallyInput');if(input.disabled)return;addTally(input.value);return;}
+  if(mode==='keys'){const input=$('#compactKeysInput');if(input.disabled)return;const keys=parseKeys(input.value);if(!keys.length){toast('Enter at least one key.');return;}const main=$('#keysInput');main.value=input.value;submitKeyInput();}
+}
+
 function renderAll(){
   if(!state.selectedDate) state.selectedDate=todayKey();
   state.selectedYear=parseDate(state.selectedDate).getFullYear();
   applyTheme(state.theme);
+  applyWorkspaceLayout();
   document.title='Key & Tally Tracker';
   $('#selectedDateInput').value=state.selectedDate;
   renderYears();
   renderEntryArea();
+  renderCompactTracker();
   renderOriginal();
   renderToday();
   renderWeek();
@@ -1425,6 +1566,7 @@ function refreshIphPanel(){
   const area=$('#topIphArea'),show=state.displayOptions.enableScheduleIph!==false&&state.displayOptions.showLiveIph!==false&&!isLocked(state.selectedDate);
   if(area){area.classList.toggle('hidden',!show);area.innerHTML=show?iphPanelHTML(state.selectedDate):'';}
   const perf=state.displayOptions.enableScheduleIph!==false?scheduleIphMetrics(state.selectedDate):{valid:false},header=$('#headerRating'),r=perf.valid?perf.projectedRating:ratingForPercent(null);if(header){header.textContent=r.name;header.className=`rating-value ${r.className}`;}
+  if(state.compactMode===true)renderCompactTracker();
 }
 function renderToday(){
   const s=state.selectedDate,entries=getEntries(s),displayEntries=sortedEntriesNewest(entries),locked=isLocked(s),mode=effectiveTrackingMode(s);
@@ -1569,7 +1711,7 @@ function addTally(amount){
   const groupId=`tally_${uid()}`,groupIndex=nextGroupIndexForDate(s),createdAt=new Date().toISOString();
   state.entries[s].push({id:uid(),key:'',kind:'tally',count:n,ppq:meta.ppq,outcome,createdAt,groupId,groupIndex});
   saveState();
-  $('#tallyCustomInput').value='';
+  $('#tallyCustomInput').value='';clearCompactEntryDraft();
   toast(`+${n} added to today’s tally.`);
   renderAll();
 }
@@ -1587,7 +1729,7 @@ function addEntries(keys,allowDuplicates=false){
   if(!state.entries[s]) state.entries[s]=[];
   const groupId=`manual_${uid()}`,groupIndex=nextGroupIndexForDate(s),createdAt=new Date().toISOString();
   keys.forEach(k=>state.entries[s].push({id:uid(),key:k,kind:'key',count:1,ppq:meta.ppq,outcome,createdAt,groupId,groupIndex}));
-  saveState(); $('#keysInput').value=''; $('#entryCountPreview').value='0'; $('#entryCountText').textContent='0 keys'; toast(`${keys.length} interaction${keys.length===1?'':'s'} added as one color group.`); renderAll();
+  saveState(); $('#keysInput').value=''; $('#entryCountPreview').value='0'; $('#entryCountText').textContent='0 keys'; clearCompactEntryDraft(); toast(`${keys.length} interaction${keys.length===1?'':'s'} added as one color group.`); renderAll();
 }
 function readScheduleForm(){
   const obj={shiftType:$('#shiftTypeSelect').value,start:$('#dayScheduleStart').value,end:$('#dayScheduleEnd').value,expectedHubbleHours:Number($('#expectedHubbleHours').value),break1Start:$('#break1Start').value,mealStart:$('#mealStart').value,break2Start:$('#break2Start').value};
@@ -1637,6 +1779,11 @@ function openSettings(){
   $('#showDashboardPerformanceToggle').checked=state.displayOptions.showDashboardPerformance!==false;
   $('#showHeaderOutcomesToggle').checked=state.displayOptions.showHeaderOutcomes!==false;
   $('#showCelebrationsToggle').checked=state.displayOptions.showCelebrations!==false;
+  $('#topbarPinnedToggle').checked=state.displayOptions.topbarPinned!==false;
+  $('#compactShowEntryToggle').checked=state.displayOptions.compactShowEntry!==false;
+  $('#compactShowAddToggle').checked=state.displayOptions.compactShowAdd!==false;
+  $('#compactShowCountToggle').checked=state.displayOptions.compactShowCount!==false;
+  $('#compactShowRatingToggle').checked=state.displayOptions.compactShowRating!==false;
   $('#dailyEmailTo').value=state.dailyEmail?.to||'';
   $('#dailyEmailCc').value=state.dailyEmail?.cc||'';
   $('#dailyEmailSubject').value=state.dailyEmail?.subject||initialState().dailyEmail.subject;
@@ -1961,6 +2108,12 @@ $$('[data-menu-view]').forEach(b=>b.addEventListener('click',()=>switchView(b.da
 $('#appMenuBtn').addEventListener('click',e=>{e.stopPropagation();const menu=$('#appMenu'),open=menu.classList.toggle('open');e.currentTarget.setAttribute('aria-expanded',String(open));});
 document.addEventListener('click',e=>{if(!e.target.closest('.app-menu-wrap'))closeAppMenu();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeAppMenu();});
+$('#topbarPinBtn').addEventListener('click',()=>{state.displayOptions.topbarPinned=state.displayOptions.topbarPinned===false;saveState();applyWorkspaceLayout();});
+$('#compactModeBtn').addEventListener('click',()=>setCompactMode(true));
+$('#expandTrackerBtn').addEventListener('click',()=>setCompactMode(false));
+$('#compactAddBtn').addEventListener('click',submitCompactEntry);
+$('#compactKeysInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();submitCompactEntry();}});
+$('#compactTallyInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing){e.preventDefault();submitCompactEntry();}});
 $('#selectedDateInput').addEventListener('change',e=>updateSelectedDate(e.target.value));
 $('#prevDate').addEventListener('click',()=>updateSelectedDate(addWorkdays(state.selectedDate,-1)));
 $('#nextDate').addEventListener('click',()=>updateSelectedDate(addWorkdays(state.selectedDate,1)));
@@ -1993,7 +2146,7 @@ $('#saveSettingsBtn').addEventListener('click',()=>{
   const name=$('#settingsName').value.trim();if(!name){toast('Employee name is required.');return;}
   const enableKeyTracker=$('#enableKeyTrackerToggle').checked,enableTallyCounter=$('#enableTallyCounterToggle').checked;
   if(!enableKeyTracker&&!enableTallyCounter){toast('Keep Key Tracker or Tally Counter turned on.');return;}
-  requestPersistentStorage();state.employeeName=name;state.defaultView=$('#defaultViewSelect').value;state.displayOptions={enableKeyTracker,enableTallyCounter,enableScheduleIph:$('#enableScheduleIphToggle').checked,showLiveIph:$('#showLiveIphToggle').checked,showDashboardPerformance:$('#showDashboardPerformanceToggle').checked,showHeaderOutcomes:$('#showHeaderOutcomesToggle').checked,showCelebrations:$('#showCelebrationsToggle').checked};state.dailyEmail={to:$('#dailyEmailTo').value.trim(),cc:$('#dailyEmailCc').value.trim(),subject:$('#dailyEmailSubject').value.trim()||initialState().dailyEmail.subject,body:$('#dailyEmailBody').value,launchMode:$('#dailyEmailLaunchMode').value||initialState().dailyEmail.launchMode,emailBehaviorVersion:3,workbookName:$('#dailyWorkbookName').value.trim()||initialState().dailyEmail.workbookName,workbookContents:workbookContentsFromSettings()};saveState();closeModal('settingsModal');renderAll();toast('Settings saved.');
+  requestPersistentStorage();state.employeeName=name;state.defaultView=$('#defaultViewSelect').value;state.displayOptions={enableKeyTracker,enableTallyCounter,enableScheduleIph:$('#enableScheduleIphToggle').checked,showLiveIph:$('#showLiveIphToggle').checked,showDashboardPerformance:$('#showDashboardPerformanceToggle').checked,showHeaderOutcomes:$('#showHeaderOutcomesToggle').checked,showCelebrations:$('#showCelebrationsToggle').checked,topbarPinned:$('#topbarPinnedToggle').checked,compactShowEntry:$('#compactShowEntryToggle').checked,compactShowAdd:$('#compactShowAddToggle').checked,compactShowCount:$('#compactShowCountToggle').checked,compactShowRating:$('#compactShowRatingToggle').checked};state.dailyEmail={to:$('#dailyEmailTo').value.trim(),cc:$('#dailyEmailCc').value.trim(),subject:$('#dailyEmailSubject').value.trim()||initialState().dailyEmail.subject,body:$('#dailyEmailBody').value,launchMode:$('#dailyEmailLaunchMode').value||initialState().dailyEmail.launchMode,emailBehaviorVersion:3,workbookName:$('#dailyWorkbookName').value.trim()||initialState().dailyEmail.workbookName,workbookContents:workbookContentsFromSettings()};saveState();closeModal('settingsModal');renderAll();toast('Settings saved.');
 });
 $('#finishSetupBtn').addEventListener('click',()=>{const name=$('#setupName').value.trim();if(!name){toast('Enter the employee name to continue.');return;}requestPersistentStorage();state.employeeName=name;state.theme=$('#setupTheme').value;state.setupComplete=true;state.currentView='today';state.defaultView='today';saveState();applyTheme(state.theme);closeModal('setupModal');renderAll();});
 $('#cornerRadius').addEventListener('input',e=>{$('#radiusValue').textContent=e.target.value;state.customTheme.radius=Number(e.target.value);applyTheme('custom');renderThemeGrid();});
@@ -2028,7 +2181,7 @@ setInterval(()=>{const now=todayKey();if(now!==lastToday){lastToday=now;state.se
 async function startTracker(){
   // Refresh the installed app cache when this build is deployed to GitHub Pages or another web host.
   if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
-    navigator.serviceWorker.register('./service-worker.js?build=19',{updateViaCache:'none'}).then(reg=>reg.update()).catch(()=>{});
+    navigator.serviceWorker.register('./service-worker.js?build=20',{updateViaCache:'none'}).then(reg=>reg.update()).catch(()=>{});
   }
   await hydrateFromIndexedDb();
   applyTheme(state.theme);
