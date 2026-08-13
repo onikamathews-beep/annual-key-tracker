@@ -507,6 +507,8 @@ input.compact-entry{resize:none}
 .compact-stat span{font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:800;white-space:nowrap}
 .compact-stat strong{font-size:16px;line-height:1.15;margin-top:2px;white-space:nowrap}
 .compact-stat .rating-value{font-size:11px;padding:3px 6px;margin-top:3px;max-width:122px;overflow:hidden;text-overflow:ellipsis}
+.compact-stat.last-key-stat{min-width:105px;max-width:220px}
+.compact-stat.last-key-stat strong{font-size:12px;white-space:normal;overflow-wrap:anywhere;word-break:break-word}
 .compact-empty-note{font-size:11px;color:var(--muted);padding:7px 4px}
 @media(max-width:520px){
   .topbar-tool .topbar-tool-label,.app-menu-button>span{display:none}
@@ -610,6 +612,7 @@ input.compact-entry{resize:none}
         <div class="compact-stats" id="compactStats">
           <div class="compact-stat" id="compactCountStat"><span id="compactCountLabel">Keys Worked</span><strong id="compactWorkedCount">0</strong></div>
           <div class="compact-stat" id="compactRatingStat"><span>Rating</span><strong id="compactRating" class="rating-value rating-not-started">—</strong></div>
+          <div class="compact-stat last-key-stat hidden" id="compactLastKeyStat"><span>Last Key</span><strong id="compactLastKey">—</strong></div>
         </div>
         <div class="compact-empty-note hidden" id="compactEmptyNote">Choose at least one minimized-view item in Settings.</div>
       </div>
@@ -799,6 +802,7 @@ input.compact-entry{resize:none}
         <label class="feature-toggle"><input type="checkbox" id="compactShowAddToggle"><span><strong>Add button when minimized</strong><small>Show Add Keys or Add Tally beside the minimized entry box. The entry box must also be visible for this button to submit.</small></span></label>
         <label class="feature-toggle"><input type="checkbox" id="compactShowCountToggle"><span><strong>Worked count when minimized</strong><small>Show how many interactions have been worked so far for the selected day.</small></span></label>
         <label class="feature-toggle"><input type="checkbox" id="compactShowRatingToggle"><span><strong>Current rating when minimized</strong><small>Show the live projected rating in the minimized window when Schedule &amp; IPH is enabled.</small></span></label>
+        <label class="feature-toggle"><input type="checkbox" id="compactShowLastKeyToggle"><span><strong>Last key worked when minimized</strong><small>Show the most recently added key for the selected day in Minimized View. This appears only on Key Tracker days.</small></span></label>
       </div>
       <h3 id="dailyEmailSettingsHeading" style="margin:22px 0 8px">Daily Email Report</h3>
       <div class="subtle" style="margin-bottom:10px">These details are used by the Email Daily Report button on the Today view. Download Workbook uses the workbook settings below without opening email. You can use commas or semicolons between multiple email addresses.</div>
@@ -992,7 +996,7 @@ const uid = () => (window.crypto && typeof window.crypto.randomUUID === 'functio
 function initialState(){
   const now = new Date();
   return {
-    version:20,
+    version:21,
     employeeName:'',
     setupComplete:false,
     _savedAt:0,
@@ -1003,7 +1007,7 @@ function initialState(){
     theme:'original',
     customTheme:{...DEFAULT_CUSTOM},
     iphSettings:{scheduleStart:'07:00',scheduleEnd:'15:30',breakStart:'',breakEnd:'',defaultGoal:0,strongPct:100,outstandingPct:120},
-    displayOptions:{enableKeyTracker:true,enableTallyCounter:true,enableScheduleIph:true,showLiveIph:true,showDashboardPerformance:true,showHeaderOutcomes:true,showCelebrations:true,topbarPinned:true,compactShowEntry:true,compactShowAdd:true,compactShowCount:true,compactShowRating:true},
+    displayOptions:{enableKeyTracker:true,enableTallyCounter:true,enableScheduleIph:true,showLiveIph:true,showDashboardPerformance:true,showHeaderOutcomes:true,showCelebrations:true,topbarPinned:true,compactShowEntry:true,compactShowAdd:true,compactShowCount:true,compactShowRating:true,compactShowLastKey:false},
     compactMode:false,
     dailyEmail:{
       to:'',cc:'',subject:'Daily Key Reports - {employee} - {date}',body:'Hello,\n\nAttached is the daily key report for {employee} for {date}.',
@@ -1418,15 +1422,19 @@ function renderCompactTracker(){
   $('#compactTrackerDate').textContent=s===todayKey()?'Today':formatDate(s,{month:'short',day:'numeric'});
   $('#compactWorkedCount').textContent=total;$('#compactCountLabel').textContent=mode==='tally'?'Interactions Worked':'Keys Worked';
   const ratingEl=$('#compactRating');ratingEl.textContent=rating.name;ratingEl.className=`rating-value ${rating.className}`;
-  const showEntry=state.displayOptions.compactShowEntry!==false,showAdd=state.displayOptions.compactShowAdd!==false,showCount=state.displayOptions.compactShowCount!==false,showRating=state.displayOptions.compactShowRating!==false&&iphEnabled;
+  const keyEntries=entries.filter(e=>e.kind!=='tally'&&String(e.key||'').trim());
+  const lastKey=keyEntries.length?String(keyEntries[keyEntries.length-1].key).trim():'—';
+  const lastKeyEl=$('#compactLastKey');lastKeyEl.textContent=lastKey;lastKeyEl.title=lastKey==='—'?'':lastKey;
+  const showEntry=state.displayOptions.compactShowEntry!==false,showAdd=state.displayOptions.compactShowAdd!==false,showCount=state.displayOptions.compactShowCount!==false,showRating=state.displayOptions.compactShowRating!==false&&iphEnabled,showLastKey=state.displayOptions.compactShowLastKey===true&&mode==='keys';
   $('#compactKeysInput').classList.toggle('hidden',!showEntry||mode==='tally');
   $('#compactTallyInput').classList.toggle('hidden',!showEntry||mode!=='tally');
   $('#compactAddBtn').classList.toggle('hidden',!showAdd);
   $('#compactCountStat').classList.toggle('hidden',!showCount);
   $('#compactRatingStat').classList.toggle('hidden',!showRating);
+  $('#compactLastKeyStat').classList.toggle('hidden',!showLastKey);
   $('#compactEntryWrap').classList.toggle('hidden',!showEntry&&!showAdd);
-  $('#compactStats').classList.toggle('hidden',!showCount&&!showRating);
-  const nothing=!showEntry&&!showAdd&&!showCount&&!showRating;$('#compactEmptyNote').classList.toggle('hidden',!nothing);
+  $('#compactStats').classList.toggle('hidden',!showCount&&!showRating&&!showLastKey);
+  const nothing=!showEntry&&!showAdd&&!showCount&&!showRating&&!showLastKey;$('#compactEmptyNote').classList.toggle('hidden',!nothing);
   $('#compactKeysInput').disabled=!canEnter||mode!=='keys';$('#compactTallyInput').disabled=!canEnter||mode!=='tally';
   const addBtn=$('#compactAddBtn');addBtn.textContent=mode==='tally'?'Add Tally':'Add Keys';addBtn.disabled=!canEnter||!showEntry||!['keys','tally'].includes(mode);
   $('#compactKeysInput').placeholder=canEnter?'Enter or paste keys':'Entry unavailable';
@@ -1784,6 +1792,7 @@ function openSettings(){
   $('#compactShowAddToggle').checked=state.displayOptions.compactShowAdd!==false;
   $('#compactShowCountToggle').checked=state.displayOptions.compactShowCount!==false;
   $('#compactShowRatingToggle').checked=state.displayOptions.compactShowRating!==false;
+  $('#compactShowLastKeyToggle').checked=state.displayOptions.compactShowLastKey===true;
   $('#dailyEmailTo').value=state.dailyEmail?.to||'';
   $('#dailyEmailCc').value=state.dailyEmail?.cc||'';
   $('#dailyEmailSubject').value=state.dailyEmail?.subject||initialState().dailyEmail.subject;
@@ -2146,7 +2155,7 @@ $('#saveSettingsBtn').addEventListener('click',()=>{
   const name=$('#settingsName').value.trim();if(!name){toast('Employee name is required.');return;}
   const enableKeyTracker=$('#enableKeyTrackerToggle').checked,enableTallyCounter=$('#enableTallyCounterToggle').checked;
   if(!enableKeyTracker&&!enableTallyCounter){toast('Keep Key Tracker or Tally Counter turned on.');return;}
-  requestPersistentStorage();state.employeeName=name;state.defaultView=$('#defaultViewSelect').value;state.displayOptions={enableKeyTracker,enableTallyCounter,enableScheduleIph:$('#enableScheduleIphToggle').checked,showLiveIph:$('#showLiveIphToggle').checked,showDashboardPerformance:$('#showDashboardPerformanceToggle').checked,showHeaderOutcomes:$('#showHeaderOutcomesToggle').checked,showCelebrations:$('#showCelebrationsToggle').checked,topbarPinned:$('#topbarPinnedToggle').checked,compactShowEntry:$('#compactShowEntryToggle').checked,compactShowAdd:$('#compactShowAddToggle').checked,compactShowCount:$('#compactShowCountToggle').checked,compactShowRating:$('#compactShowRatingToggle').checked};state.dailyEmail={to:$('#dailyEmailTo').value.trim(),cc:$('#dailyEmailCc').value.trim(),subject:$('#dailyEmailSubject').value.trim()||initialState().dailyEmail.subject,body:$('#dailyEmailBody').value,launchMode:$('#dailyEmailLaunchMode').value||initialState().dailyEmail.launchMode,emailBehaviorVersion:3,workbookName:$('#dailyWorkbookName').value.trim()||initialState().dailyEmail.workbookName,workbookContents:workbookContentsFromSettings()};saveState();closeModal('settingsModal');renderAll();toast('Settings saved.');
+  requestPersistentStorage();state.employeeName=name;state.defaultView=$('#defaultViewSelect').value;state.displayOptions={enableKeyTracker,enableTallyCounter,enableScheduleIph:$('#enableScheduleIphToggle').checked,showLiveIph:$('#showLiveIphToggle').checked,showDashboardPerformance:$('#showDashboardPerformanceToggle').checked,showHeaderOutcomes:$('#showHeaderOutcomesToggle').checked,showCelebrations:$('#showCelebrationsToggle').checked,topbarPinned:$('#topbarPinnedToggle').checked,compactShowEntry:$('#compactShowEntryToggle').checked,compactShowAdd:$('#compactShowAddToggle').checked,compactShowCount:$('#compactShowCountToggle').checked,compactShowRating:$('#compactShowRatingToggle').checked,compactShowLastKey:$('#compactShowLastKeyToggle').checked};state.dailyEmail={to:$('#dailyEmailTo').value.trim(),cc:$('#dailyEmailCc').value.trim(),subject:$('#dailyEmailSubject').value.trim()||initialState().dailyEmail.subject,body:$('#dailyEmailBody').value,launchMode:$('#dailyEmailLaunchMode').value||initialState().dailyEmail.launchMode,emailBehaviorVersion:3,workbookName:$('#dailyWorkbookName').value.trim()||initialState().dailyEmail.workbookName,workbookContents:workbookContentsFromSettings()};saveState();closeModal('settingsModal');renderAll();toast('Settings saved.');
 });
 $('#finishSetupBtn').addEventListener('click',()=>{const name=$('#setupName').value.trim();if(!name){toast('Enter the employee name to continue.');return;}requestPersistentStorage();state.employeeName=name;state.theme=$('#setupTheme').value;state.setupComplete=true;state.currentView='today';state.defaultView='today';saveState();applyTheme(state.theme);closeModal('setupModal');renderAll();});
 $('#cornerRadius').addEventListener('input',e=>{$('#radiusValue').textContent=e.target.value;state.customTheme.radius=Number(e.target.value);applyTheme('custom');renderThemeGrid();});
@@ -2181,7 +2190,7 @@ setInterval(()=>{const now=todayKey();if(now!==lastToday){lastToday=now;state.se
 async function startTracker(){
   // Refresh the installed app cache when this build is deployed to GitHub Pages or another web host.
   if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
-    navigator.serviceWorker.register('./service-worker.js?build=20',{updateViaCache:'none'}).then(reg=>reg.update()).catch(()=>{});
+    navigator.serviceWorker.register('./service-worker.js?build=21',{updateViaCache:'none'}).then(reg=>reg.update()).catch(()=>{});
   }
   await hydrateFromIndexedDb();
   applyTheme(state.theme);
