@@ -712,7 +712,7 @@ body.dashboard-focus .toolbar{margin-bottom:12px}
         <label class="feature-toggle"><input type="checkbox" id="showCelebrationsToggle"><span><strong>Milestone celebrations</strong><small>Play a small animation the first time a new rating level is reached.</small></span></label>
       </div>
       <h3 id="dailyEmailSettingsHeading" style="margin:22px 0 8px">Daily Email Report</h3>
-      <div class="subtle" style="margin-bottom:10px">These details are used by the Email Daily Report button on the Today view. You can use commas or semicolons between multiple email addresses.</div>
+      <div class="subtle" style="margin-bottom:10px">These details are used by the Email Daily Report button on the Today view. Download Workbook uses the workbook settings below without opening email. You can use commas or semicolons between multiple email addresses.</div>
       <div class="email-settings-grid">
         <div class="field"><label for="dailyEmailTo">To</label><input id="dailyEmailTo" type="text" autocomplete="off" placeholder="name@company.com; another@company.com"></div>
         <div class="field"><label for="dailyEmailCc">CC</label><input id="dailyEmailCc" type="text" autocomplete="off" placeholder="Optional"></div>
@@ -1429,7 +1429,7 @@ function refreshIphPanel(){
 function renderToday(){
   const s=state.selectedDate,entries=getEntries(s),displayEntries=sortedEntriesNewest(entries),locked=isLocked(s),mode=effectiveTrackingMode(s);
   const emptyMessage=locked?'No activity was recorded for this day.':mode?`No ${mode==='tally'?'tallies':'keys'} recorded for this day.`:'Choose Key Tracker or Tally Counter above to begin.';
-  $('#todayView').innerHTML=`<div class="activity-head"><div><h2>Activity History</h2><div class="subtle">Newest activity appears first.</div></div><div class="activity-head-actions"><button class="btn btn-accent btn-sm daily-email-btn" id="dailyEmailReportBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 6h18v12H3z"/><path d="m4 7 8 6 8-6"/></svg><span>Email Daily Report</span></button><span class="badge">${totalEntries(entries)} interactions</span></div></div><div class="card table-wrap"><table class="data-table"><thead><tr><th style="width:55px">#</th><th>Key / Tally</th><th style="width:105px">Time</th><th>PPQ Type</th><th>Outcome</th><th style="width:100px">Action</th></tr></thead><tbody>${displayEntries.length?displayEntries.map((e,i)=>`<tr data-entry-id="${e.id}" class="grouped-row ${groupClass(e)} ${highlightIds.includes(e.id)?'highlight':''}"><td>${i+1}</td><td><strong>${esc(entryLabel(e))}</strong>${e.kind==='tally'?`<span class="badge entry-type-badge">${entryCount(e)} interactions</span>`:''}</td><td class="activity-time">${esc(entryTimeLabel(e))}</td><td>${esc(e.ppq)}</td><td>${locked?outcomeBadge(e.outcome):`<select class="outcome-select" data-outcome-id="${e.id}">${OUTCOMES.map(o=>`<option ${o===e.outcome?'selected':''}>${o}</option>`).join('')}</select>`}</td><td>${locked?'<span class="subtle">Locked</span>':`<button class="btn btn-danger btn-sm" data-delete-id="${e.id}">Delete</button>`}</td></tr>`).join(''):`<tr><td colspan="6"><div class="empty">${esc(emptyMessage)}</div></td></tr>`}</tbody></table></div>`;
+  $('#todayView').innerHTML=`<div class="activity-head"><div><h2>Activity History</h2><div class="subtle">Newest activity appears first.</div></div><div class="activity-head-actions"><button class="btn btn-accent btn-sm daily-email-btn" id="dailyEmailReportBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 6h18v12H3z"/><path d="m4 7 8 6 8-6"/></svg><span>Email Daily Report</span></button><button class="btn btn-sm daily-email-btn" id="downloadDailyWorkbookBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg><span>Download Workbook</span></button><span class="badge">${totalEntries(entries)} interactions</span></div></div><div class="card table-wrap"><table class="data-table"><thead><tr><th style="width:55px">#</th><th>Key / Tally</th><th style="width:105px">Time</th><th>PPQ Type</th><th>Outcome</th><th style="width:100px">Action</th></tr></thead><tbody>${displayEntries.length?displayEntries.map((e,i)=>`<tr data-entry-id="${e.id}" class="grouped-row ${groupClass(e)} ${highlightIds.includes(e.id)?'highlight':''}"><td>${i+1}</td><td><strong>${esc(entryLabel(e))}</strong>${e.kind==='tally'?`<span class="badge entry-type-badge">${entryCount(e)} interactions</span>`:''}</td><td class="activity-time">${esc(entryTimeLabel(e))}</td><td>${esc(e.ppq)}</td><td>${locked?outcomeBadge(e.outcome):`<select class="outcome-select" data-outcome-id="${e.id}">${OUTCOMES.map(o=>`<option ${o===e.outcome?'selected':''}>${o}</option>`).join('')}</select>`}</td><td>${locked?'<span class="subtle">Locked</span>':`<button class="btn btn-danger btn-sm" data-delete-id="${e.id}">Delete</button>`}</td></tr>`).join(''):`<tr><td colspan="6"><div class="empty">${esc(emptyMessage)}</div></td></tr>`}</tbody></table></div>`;
   setTimeout(()=>{highlightIds=[];},2000);
 }
 function outcomeBadge(o){ return `<span class="badge ${o==='Contacted'?'contact':o==='Snoozed'?'snooze':'unable'}">${esc(o)}</span>`; }
@@ -1818,6 +1818,18 @@ function downloadDailyWorkbook(date){
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1200);
   return name;
 }
+function downloadDailyWorkbookOnly(){
+  const date=state.selectedDate,settings={...initialState().dailyEmail,...(state.dailyEmail||{})};
+  const contents={...initialState().dailyEmail.workbookContents,...(settings.workbookContents||{})};
+  if(!selectedWorkbookContentCount(contents)){
+    toast('Choose at least one item to include in the workbook.');
+    openSettings();
+    setTimeout(()=>document.querySelector('.workbook-settings')?.scrollIntoView({behavior:'smooth',block:'center'}),80);
+    return;
+  }
+  const fileName=downloadDailyWorkbook(date);
+  toast(`Workbook downloaded: ${fileName}. You can attach it in Teams, email, or anywhere else you need it.`);
+}
 function copyDailyEmailMessage(text){
   if(!text)return true;
   const ta=document.createElement('textarea');
@@ -1991,6 +2003,7 @@ $$('.modal-backdrop').forEach(m=>m.addEventListener('click',e=>{if(e.target!==m|
 
 document.addEventListener('click',e=>{
   if(e.target.closest('#dailyEmailReportBtn')){createDailyEmailReport();return;}
+  if(e.target.closest('#downloadDailyWorkbookBtn')){downloadDailyWorkbookOnly();return;}
   const out=e.target.closest('[data-delete-id]'); if(out){const id=out.dataset.deleteId;if(isLocked(state.selectedDate))return;if(confirm('Delete this entry from today?')){state.entries[state.selectedDate]=getEntries(state.selectedDate).filter(x=>x.id!==id);saveState();renderAll();toast('Interaction deleted.');}return;}
   const jump=e.target.closest('[data-jump-date]'); if(jump){updateSelectedDate(jump.dataset.jumpDate);switchView('today');return;}
   const theme=e.target.closest('[data-theme]'); if(theme){state.theme=theme.dataset.theme;applyTheme(state.theme);renderThemeGrid();renderAll();return;}
@@ -2015,7 +2028,7 @@ setInterval(()=>{const now=todayKey();if(now!==lastToday){lastToday=now;state.se
 async function startTracker(){
   // Refresh the installed app cache when this build is deployed to GitHub Pages or another web host.
   if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
-    navigator.serviceWorker.register('./service-worker.js?build=18',{updateViaCache:'none'}).then(reg=>reg.update()).catch(()=>{});
+    navigator.serviceWorker.register('./service-worker.js?build=19',{updateViaCache:'none'}).then(reg=>reg.update()).catch(()=>{});
   }
   await hydrateFromIndexedDb();
   applyTheme(state.theme);

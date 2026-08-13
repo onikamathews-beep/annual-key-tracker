@@ -36,3 +36,4 @@ Outlook signature-safe email behavior: the daily report email opens with To/CC/S
 
 
 Outlook draft behavior update: Settings now lets you choose Keep Outlook Signature or Prefill Email Message. Signature mode copies the report message for pasting while preserving Outlook's automatic signature. Prefill mode places the report message in the draft, but Outlook may omit its automatic signature.
+- Adds a separate **Download Workbook** button on the Today view so the selected-date Excel report can be downloaded without opening email.
