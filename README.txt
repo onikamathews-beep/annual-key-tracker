@@ -30,3 +30,6 @@ Your existing tracker entries and settings remain stored in the browser and are 
 
 
 Update: Daily email drafts now prefill the saved message. Default subject: Daily Key Reports - {employee} - {date}. Default message includes the employee name and does not add a Thank you/name signoff.
+
+
+Outlook signature-safe email behavior: the daily report email opens with To/CC/Subject prefilled, while the saved message is copied to the clipboard for pasting above the normal Outlook signature. This avoids mailto body text suppressing Outlook signatures.

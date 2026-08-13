@@ -717,7 +717,7 @@ body.dashboard-focus .toolbar{margin-bottom:12px}
         <div class="field"><label for="dailyEmailTo">To</label><input id="dailyEmailTo" type="text" autocomplete="off" placeholder="name@company.com; another@company.com"></div>
         <div class="field"><label for="dailyEmailCc">CC</label><input id="dailyEmailCc" type="text" autocomplete="off" placeholder="Optional"></div>
         <div class="field full"><label for="dailyEmailSubject">Subject</label><input id="dailyEmailSubject" type="text" placeholder="Daily Key Reports - {employee} - {date}"><div class="email-template-help">Available placeholders: {date}, {date_short}, {employee}, {total}, {ppq}.</div></div>
-        <div class="field full"><label for="dailyEmailBody">Email Message</label><textarea id="dailyEmailBody" rows="5" placeholder="Hello,&#10;&#10;Attached is the daily key report for {employee} for {date}."></textarea><div class="email-template-help">The same placeholders can be used in the message. This text is placed directly into the email draft.</div></div>
+        <div class="field full"><label for="dailyEmailBody">Email Message</label><textarea id="dailyEmailBody" rows="5" placeholder="Hello,&#10;&#10;Attached is the daily key report for {employee} for {date}."></textarea><div class="email-template-help">The same placeholders can be used in the message. This message is copied automatically when you create the report. Paste it above your normal Outlook signature.</div></div>
         <div class="field full"><label for="dailyWorkbookName">Workbook File Name</label><input id="dailyWorkbookName" type="text" placeholder="Daily Keys - {employee} - {date}"><div class="email-template-help">Default: Daily Keys - {employee} - {date}. You can use {date}, {date_short}, {employee}, {total}, and {ppq}. The tracker adds .xlsx automatically.</div></div>
         <div class="workbook-settings">
           <div class="workbook-settings-head"><div><strong>Workbook Contents</strong><div class="subtle">Choose exactly what the Excel file includes. The default is Date (short) + <span id="wbListDefaultLabel">Key List</span> only.</div></div><div class="workbook-settings-actions"><button class="btn btn-sm" id="selectAllWorkbookFieldsBtn" type="button">Select All</button><button class="btn btn-sm" id="clearWorkbookFieldsBtn" type="button">Clear All</button></div></div>
@@ -742,7 +742,7 @@ body.dashboard-focus .toolbar{margin-bottom:12px}
           </div>
         </div>
       </div>
-      <div class="status-banner" style="margin-top:10px"><span>i</span><div><strong>The tracker prepares both pieces of the report.</strong><div class="subtle">It downloads the Excel workbook and opens a new email with your saved recipients, subject, and message already filled in. Web browsers do not allow a normal website to silently attach a local file to Outlook, so attach the downloaded workbook before sending.</div></div></div>
+      <div class="status-banner" style="margin-top:10px"><span>i</span><div><strong>The tracker prepares both pieces of the report.</strong><div class="subtle">It downloads the Excel workbook, copies your saved report message, and opens a new Outlook email with To, CC, and Subject filled in. Paste the copied message above your normal Outlook signature, then attach the downloaded workbook before sending.</div></div></div>
       <h3 style="margin:22px 0 10px">Automatic Holidays</h3>
       <div class="status-banner"><span>✓</span><div><strong>Recognized holidays are excluded automatically.</strong><div class="subtle">New Year’s Day, Martin Luther King Jr. Day, Memorial Day, observed Independence Day, Labor Day, Thanksgiving, and observed Christmas Day are locked and skipped when moving between workdays.</div></div></div>
       <h3 style="margin:22px 0 10px">Locked IPH Standards</h3>
@@ -902,7 +902,7 @@ const uid = () => (window.crypto && typeof window.crypto.randomUUID === 'functio
 function initialState(){
   const now = new Date();
   return {
-    version:18,
+    version:19,
     employeeName:'',
     setupComplete:false,
     _savedAt:0,
@@ -1846,10 +1846,14 @@ function createDailyEmailReport(){
   const params=[];
   if(cc.length)params.push(`cc=${encodeURIComponent(cc.join(','))}`);
   if(subject)params.push(`subject=${encodeURIComponent(subject)}`);
-  if(body)params.push(`body=${encodeURIComponent(body)}`);
+  const copied=copyDailyEmailMessage(body);
   const mailto=`mailto:${recipientPath}${params.length?'?'+params.join('&'):''}`;
-  toast(`Excel report downloaded: ${fileName}. Email draft prepared — attach the workbook before sending.`);
-  setTimeout(()=>{window.location.href=mailto;},150);
+  if(copied){
+    toast(`Excel report downloaded: ${fileName}. Report message copied — paste it above your Outlook signature, then attach the workbook.`);
+  }else{
+    toast(`Excel report downloaded: ${fileName}. Outlook will open with your signature; copy the saved Email Message from Settings, then attach the workbook.`);
+  }
+  setTimeout(()=>{window.location.href=mailto;},250);
 }
 
 
