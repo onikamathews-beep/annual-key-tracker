@@ -6,7 +6,7 @@ This update adds a selected-day Excel + email workflow to the existing Key & Tal
 
 - **Email Daily Report** now appears at the top of the Today view.
 - It follows the date selected in the tracker instead of forcing the current date.
-- The generated Excel workbook includes employee, date, tracking method, PPQ, interaction totals, outcome totals, and the detailed Key/Tally activity table.
+- The generated Excel workbook includes employee, date, tracking method, PPQ, interaction totals, outcome totals, and the detailed Key List or Tally List activity table.
 - Report recipients, CC addresses, subject, and email message can be saved under **Settings → Daily Email Report**.
 - Subject and message templates support `{date}`, `{date_short}`, `{employee}`, `{total}`, and `{ppq}`.
 - The tracker downloads the workbook and opens the default email application with the saved recipients, subject, and message filled in.

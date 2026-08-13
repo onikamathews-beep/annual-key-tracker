@@ -720,7 +720,7 @@ body.dashboard-focus .toolbar{margin-bottom:12px}
         <div class="field full"><label for="dailyEmailBody">Email Message</label><textarea id="dailyEmailBody" rows="5" placeholder="Attached is my daily report for {date}."></textarea><div class="email-template-help">The same placeholders can be used in the message.</div></div>
         <div class="field full"><label for="dailyWorkbookName">Workbook File Name</label><input id="dailyWorkbookName" type="text" placeholder="Daily Keys - {employee} - {date}"><div class="email-template-help">Default: Daily Keys - {employee} - {date}. You can use {date}, {date_short}, {employee}, {total}, and {ppq}. The tracker adds .xlsx automatically.</div></div>
         <div class="workbook-settings">
-          <div class="workbook-settings-head"><div><strong>Workbook Contents</strong><div class="subtle">Choose exactly what the Excel file includes. The default is Date (short) + Each Key/Tally only.</div></div><div class="workbook-settings-actions"><button class="btn btn-sm" id="selectAllWorkbookFieldsBtn" type="button">Select All</button><button class="btn btn-sm" id="clearWorkbookFieldsBtn" type="button">Clear All</button></div></div>
+          <div class="workbook-settings-head"><div><strong>Workbook Contents</strong><div class="subtle">Choose exactly what the Excel file includes. The default is Date (short) + <span id="wbListDefaultLabel">Key List</span> only.</div></div><div class="workbook-settings-actions"><button class="btn btn-sm" id="selectAllWorkbookFieldsBtn" type="button">Select All</button><button class="btn btn-sm" id="clearWorkbookFieldsBtn" type="button">Clear All</button></div></div>
           <div class="workbook-group-title">Daily summary</div>
           <div class="workbook-option-grid">
             <label class="workbook-option"><input type="checkbox" id="wbDateShort">Date (short)</label>
@@ -732,9 +732,9 @@ body.dashboard-focus .toolbar{margin-bottom:12px}
             <label class="workbook-option"><input type="checkbox" id="wbSnoozed">Snoozed</label>
             <label class="workbook-option"><input type="checkbox" id="wbUnable">Unable to Contact</label>
           </div>
-          <div class="workbook-group-title">Key / tally list</div>
+          <div class="workbook-group-title" id="wbListGroupTitle">Key List</div>
           <div class="workbook-option-grid">
-            <label class="workbook-option"><input type="checkbox" id="wbKeyTally">Each Key/Tally</label>
+            <label class="workbook-option"><input type="checkbox" id="wbKeyTally"><span id="wbKeyTallyLabel">Key List</span></label>
             <label class="workbook-option"><input type="checkbox" id="wbTime">Time</label>
             <label class="workbook-option"><input type="checkbox" id="wbDetailPpq">PPQ Type</label>
             <label class="workbook-option"><input type="checkbox" id="wbOutcome">Outcome</label>
@@ -1631,6 +1631,7 @@ function openSettings(){
   $('#dailyWorkbookName').value=state.dailyEmail?.workbookName||initialState().dailyEmail.workbookName;
   const workbookContents={...initialState().dailyEmail.workbookContents,...(state.dailyEmail?.workbookContents||{})};
   Object.entries(WORKBOOK_FIELD_IDS).forEach(([key,id])=>{$('#'+id).checked=Boolean(workbookContents[key]);});
+  syncWorkbookListLabels(state.selectedDate);
   syncDisplayOptionControls();renderThemeGrid();openModal('settingsModal');
 }
 function downloadBackup(){
@@ -1729,6 +1730,16 @@ function applyEmailTemplate(text,date){
   Object.entries(dailyEmailTokens(date)).forEach(([token,value])=>{out=out.split(token).join(value);});
   return out;
 }
+function workbookListLabel(date){
+  return effectiveTrackingMode(date)==='tally'?'Tally List':'Key List';
+}
+function syncWorkbookListLabels(date=state.selectedDate){
+  const label=workbookListLabel(date);
+  const option=$('#wbKeyTallyLabel'),group=$('#wbListGroupTitle'),defaultLabel=$('#wbListDefaultLabel');
+  if(option)option.textContent=label;
+  if(group)group.textContent=label;
+  if(defaultLabel)defaultLabel.textContent=label;
+}
 function workbookContentsFromSettings(){
   const result={};Object.entries(WORKBOOK_FIELD_IDS).forEach(([key,id])=>{result[key]=Boolean($('#'+id)?.checked);});return result;
 }
@@ -1758,7 +1769,7 @@ function dailyWorkbookBlob(date){
   rows.push(...summary);
 
   const detailFields=[];
-  if(contents.keyTally)detailFields.push({header:'Each Key/Tally',value:e=>entryLabel(e)});
+  if(contents.keyTally)detailFields.push({header:workbookListLabel(date),value:e=>entryLabel(e)});
   if(contents.time)detailFields.push({header:'Time',value:e=>entryTimeLabel(e)});
   if(contents.detailPpq)detailFields.push({header:'PPQ Type',value:e=>e.ppq||meta.ppq||''});
   if(contents.outcome)detailFields.push({header:'Outcome',value:e=>e.outcome||''});
