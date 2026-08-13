@@ -25,3 +25,6 @@ Web browsers do not allow an ordinary webpage to silently attach a local file to
 
 - Outlook signature-safe email launch: To/CC/Subject are prefilled, the saved report message is copied to the clipboard, and the mail body is left untouched so Outlook can insert the normal automatic signature.
 - The default email message no longer adds “Thank you” or the employee name.
+
+
+Update: Daily email drafts now prefill the saved message. Default subject: Daily Key Reports - {employee} - {date}. Default message includes the employee name and does not add a Thank you/name signoff.
