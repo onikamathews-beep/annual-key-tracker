@@ -744,7 +744,6 @@
     if (input) input.value = '';
     saveState();
     renderAll();
-    toast(`${keysToAdd.length} interaction${keysToAdd.length === 1 ? '' : 's'} added in one group.`);
   }
 
   function addKeyBatch() {
@@ -776,7 +775,6 @@
     if (customInput) customInput.value = '';
     saveState();
     renderAll();
-    toast(`${amount} interaction${amount === 1 ? '' : 's'} added.`);
   }
 
   function addTally(count) {

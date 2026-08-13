@@ -1351,7 +1351,6 @@ function enableHubbleKeyDrop(target){
     const keys=parseKeys(raw);
     if(!keys.length){toast('No Hubble intervention keys were found in that drop.');return;}
     insertExtractedKeys(target,keys);
-    toast(`${keys.length} Hubble key${keys.length===1?'':'s'} pulled from the link${keys.length===1?'':'s'}.`);
   });
   target.addEventListener('paste',event=>{
     const raw=event.clipboardData?.getData('text/plain')||'';
@@ -1784,7 +1783,6 @@ function addTally(amount){
   state.entries[s].push({id:uid(),key:'',kind:'tally',count:n,ppq:meta.ppq,outcome,createdAt,groupId,groupIndex});
   saveState();
   $('#tallyCustomInput').value='';clearCompactEntryDraft();
-  toast(`+${n} added to today’s tally.`);
   renderAll();
 }
 
@@ -1801,7 +1799,7 @@ function addEntries(keys,allowDuplicates=false){
   if(!state.entries[s]) state.entries[s]=[];
   const groupId=`manual_${uid()}`,groupIndex=nextGroupIndexForDate(s),createdAt=new Date().toISOString();
   keys.forEach(k=>state.entries[s].push({id:uid(),key:k,kind:'key',count:1,ppq:meta.ppq,outcome,createdAt,groupId,groupIndex}));
-  saveState(); $('#keysInput').value=''; $('#entryCountPreview').value='0'; $('#entryCountText').textContent='0 keys'; clearCompactEntryDraft(); toast(`${keys.length} interaction${keys.length===1?'':'s'} added as one color group.`); renderAll();
+  saveState(); $('#keysInput').value=''; $('#entryCountPreview').value='0'; $('#entryCountText').textContent='0 keys'; clearCompactEntryDraft(); renderAll();
 }
 function readScheduleForm(){
   const obj={shiftType:$('#shiftTypeSelect').value,start:$('#dayScheduleStart').value,end:$('#dayScheduleEnd').value,expectedHubbleHours:Number($('#expectedHubbleHours').value),break1Start:$('#break1Start').value,mealStart:$('#mealStart').value,break2Start:$('#break2Start').value};
