@@ -718,7 +718,7 @@ body.dashboard-focus .toolbar{margin-bottom:12px}
         <div class="field"><label for="dailyEmailCc">CC</label><input id="dailyEmailCc" type="text" autocomplete="off" placeholder="Optional"></div>
         <div class="field full"><label for="dailyEmailSubject">Subject</label><input id="dailyEmailSubject" type="text" placeholder="Daily Key Reports - {employee} - {date}"><div class="email-template-help">Available placeholders: {date}, {date_short}, {employee}, {total}, {ppq}.</div></div>
         <div class="field full"><label for="dailyEmailBody">Email Message</label><textarea id="dailyEmailBody" rows="5" placeholder="Hello,&#10;&#10;Attached is the daily key report for {employee} for {date}."></textarea><div class="email-template-help">The same placeholders can be used in the message.</div></div>
-        <div class="field full"><label for="dailyEmailLaunchMode">Outlook Draft Behavior</label><select id="dailyEmailLaunchMode"><option value="signature">Keep Outlook Signature</option><option value="prefill">Prefill Email Message</option></select><div class="email-template-help">Keep Outlook Signature leaves the Outlook body untouched and copies your report message so you can paste it above the signature. Prefill Email Message puts the message directly into the draft, but Outlook may omit its automatic signature.</div></div>
+        <div class="field full"><label for="dailyEmailLaunchMode">Outlook Draft Behavior</label><select id="dailyEmailLaunchMode"><option value="prefill">Prefill Email Message</option><option value="signature">Keep Outlook Signature (message is copied, not inserted)</option></select><div class="email-template-help">Prefill Email Message places your saved message directly into the Outlook draft. Outlook may omit its automatic signature when a browser supplies body text. Keep Outlook Signature leaves the body untouched and copies the message for you to paste.</div></div>
         <div class="field full"><label for="dailyWorkbookName">Workbook File Name</label><input id="dailyWorkbookName" type="text" placeholder="Daily Keys - {employee} - {date}"><div class="email-template-help">Default: Daily Keys - {employee} - {date}. You can use {date}, {date_short}, {employee}, {total}, and {ppq}. The tracker adds .xlsx automatically.</div></div>
         <div class="workbook-settings">
           <div class="workbook-settings-head"><div><strong>Workbook Contents</strong><div class="subtle">Choose exactly what the Excel file includes. The default is Date (short) + <span id="wbListDefaultLabel">Key List</span> only.</div></div><div class="workbook-settings-actions"><button class="btn btn-sm" id="selectAllWorkbookFieldsBtn" type="button">Select All</button><button class="btn btn-sm" id="clearWorkbookFieldsBtn" type="button">Clear All</button></div></div>
@@ -743,7 +743,7 @@ body.dashboard-focus .toolbar{margin-bottom:12px}
           </div>
         </div>
       </div>
-      <div class="status-banner" style="margin-top:10px"><span>i</span><div><strong>Choose how Outlook should open the report.</strong><div class="subtle">Keep Outlook Signature preserves your normal automatic signature and copies the report message for pasting. Prefill Email Message places the report message directly in the draft, but Outlook may omit the automatic signature. The Excel workbook is downloaded in either mode.</div></div></div>
+      <div class="status-banner" style="margin-top:10px"><span>i</span><div><strong>Prefill Email Message is the default.</strong><div class="subtle">This puts your saved Email Message directly into the draft. If you switch to Keep Outlook Signature, Outlook opens with a blank body by design and the tracker copies the report message for you to paste. The Excel workbook is downloaded in either mode.</div></div></div>
       <h3 style="margin:22px 0 10px">Automatic Holidays</h3>
       <div class="status-banner"><span>✓</span><div><strong>Recognized holidays are excluded automatically.</strong><div class="subtle">New Year’s Day, Martin Luther King Jr. Day, Memorial Day, observed Independence Day, Labor Day, Thanksgiving, and observed Christmas Day are locked and skipped when moving between workdays.</div></div></div>
       <h3 style="margin:22px 0 10px">Locked IPH Standards</h3>
@@ -917,7 +917,8 @@ function initialState(){
     displayOptions:{enableKeyTracker:true,enableTallyCounter:true,enableScheduleIph:true,showLiveIph:true,showDashboardPerformance:true,showHeaderOutcomes:true,showCelebrations:true},
     dailyEmail:{
       to:'',cc:'',subject:'Daily Key Reports - {employee} - {date}',body:'Hello,\n\nAttached is the daily key report for {employee} for {date}.',
-      launchMode:'signature',
+      launchMode:'prefill',
+      emailBehaviorVersion:2,
       workbookName:'Daily Keys - {employee} - {date}',
       workbookContents:{dateShort:true,employee:false,trackingMethod:false,summaryPpq:false,totalInteractions:false,contacted:false,snoozed:false,unable:false,keyTally:true,time:false,detailPpq:false,outcome:false,interactionCount:false}
     },
@@ -1283,6 +1284,9 @@ function migrateDailyEmailSettings(){
   const legacyDefaultSubjects=['Daily Key Report - {date}'];
   if(legacyDefaultBodies.includes(saved.body))saved.body=defaults.body;
   if(legacyDefaultSubjects.includes(saved.subject))saved.subject=defaults.subject;
+  // Earlier report builds defaulted to signature-safe mode, which intentionally omitted the email body.
+  // Move existing installs to body-prefill once so the saved Email Message actually appears in Outlook.
+  if(Number(saved.emailBehaviorVersion||0)<2){saved.launchMode='prefill';saved.emailBehaviorVersion=2;}
   state.dailyEmail={...defaults,...saved,workbookContents:{...defaults.workbookContents,...(saved.workbookContents||{})}};
 }
 
@@ -1844,13 +1848,14 @@ function createDailyEmailReport(){
     return;
   }
   const fileName=downloadDailyWorkbook(date);
-  const subject=applyEmailTemplate(settings.subject,date),body=applyEmailTemplate(settings.body,date);
-  const recipientPath=to.map(encodeURIComponent).join(',');
+  const subject=applyEmailTemplate(settings.subject,date);
+  const body=applyEmailTemplate(settings.body,date).replace(/\r?\n/g,'\r\n');
+  const recipientPath=to.join(';');
   const params=[];
-  if(cc.length)params.push(`cc=${encodeURIComponent(cc.join(','))}`);
+  if(cc.length)params.push(`cc=${encodeURIComponent(cc.join(';'))}`);
   if(subject)params.push(`subject=${encodeURIComponent(subject)}`);
-  const launchMode=settings.launchMode||'signature';
-  if(launchMode==='prefill'&&body)params.push(`body=${encodeURIComponent(body)}`);
+  const launchMode=settings.launchMode||'prefill';
+  if(launchMode==='prefill')params.push(`body=${encodeURIComponent(body||'')}`);
   const mailto=`mailto:${recipientPath}${params.length?'?'+params.join('&'):''}`;
   if(launchMode==='prefill'){
     toast(`Excel report downloaded: ${fileName}. Email message will be prefilled; attach the workbook before sending.`);
@@ -1957,7 +1962,7 @@ $('#saveSettingsBtn').addEventListener('click',()=>{
   const name=$('#settingsName').value.trim();if(!name){toast('Employee name is required.');return;}
   const enableKeyTracker=$('#enableKeyTrackerToggle').checked,enableTallyCounter=$('#enableTallyCounterToggle').checked;
   if(!enableKeyTracker&&!enableTallyCounter){toast('Keep Key Tracker or Tally Counter turned on.');return;}
-  requestPersistentStorage();state.employeeName=name;state.defaultView=$('#defaultViewSelect').value;state.displayOptions={enableKeyTracker,enableTallyCounter,enableScheduleIph:$('#enableScheduleIphToggle').checked,showLiveIph:$('#showLiveIphToggle').checked,showDashboardPerformance:$('#showDashboardPerformanceToggle').checked,showHeaderOutcomes:$('#showHeaderOutcomesToggle').checked,showCelebrations:$('#showCelebrationsToggle').checked};state.dailyEmail={to:$('#dailyEmailTo').value.trim(),cc:$('#dailyEmailCc').value.trim(),subject:$('#dailyEmailSubject').value.trim()||initialState().dailyEmail.subject,body:$('#dailyEmailBody').value,launchMode:$('#dailyEmailLaunchMode').value||initialState().dailyEmail.launchMode,workbookName:$('#dailyWorkbookName').value.trim()||initialState().dailyEmail.workbookName,workbookContents:workbookContentsFromSettings()};saveState();closeModal('settingsModal');renderAll();toast('Settings saved.');
+  requestPersistentStorage();state.employeeName=name;state.defaultView=$('#defaultViewSelect').value;state.displayOptions={enableKeyTracker,enableTallyCounter,enableScheduleIph:$('#enableScheduleIphToggle').checked,showLiveIph:$('#showLiveIphToggle').checked,showDashboardPerformance:$('#showDashboardPerformanceToggle').checked,showHeaderOutcomes:$('#showHeaderOutcomesToggle').checked,showCelebrations:$('#showCelebrationsToggle').checked};state.dailyEmail={to:$('#dailyEmailTo').value.trim(),cc:$('#dailyEmailCc').value.trim(),subject:$('#dailyEmailSubject').value.trim()||initialState().dailyEmail.subject,body:$('#dailyEmailBody').value,launchMode:$('#dailyEmailLaunchMode').value||initialState().dailyEmail.launchMode,emailBehaviorVersion:2,workbookName:$('#dailyWorkbookName').value.trim()||initialState().dailyEmail.workbookName,workbookContents:workbookContentsFromSettings()};saveState();closeModal('settingsModal');renderAll();toast('Settings saved.');
 });
 $('#finishSetupBtn').addEventListener('click',()=>{const name=$('#setupName').value.trim();if(!name){toast('Enter the employee name to continue.');return;}requestPersistentStorage();state.employeeName=name;state.theme=$('#setupTheme').value;state.setupComplete=true;state.currentView='today';state.defaultView='today';saveState();applyTheme(state.theme);closeModal('setupModal');renderAll();});
 $('#cornerRadius').addEventListener('input',e=>{$('#radiusValue').textContent=e.target.value;state.customTheme.radius=Number(e.target.value);applyTheme('custom');renderThemeGrid();});
@@ -1989,6 +1994,10 @@ let lastToday=todayKey();
 setInterval(()=>{const now=todayKey();if(now!==lastToday){lastToday=now;state.selectedDate=now;state.selectedYear=new Date().getFullYear();getMeta(now);saveState();renderAll();toast('A new workday has started. Yesterday is now locked.');return;}if(state.currentView==='today'&&!document.activeElement?.closest('#iphPanel'))refreshIphPanel();},60000);
 
 async function startTracker(){
+  // Refresh the installed app cache when this build is deployed to GitHub Pages or another web host.
+  if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
+    navigator.serviceWorker.register('./service-worker.js?build=17',{updateViaCache:'none'}).then(reg=>reg.update()).catch(()=>{});
+  }
   await hydrateFromIndexedDb();
   applyTheme(state.theme);
   state.currentView=state.currentView||state.defaultView||'today';
