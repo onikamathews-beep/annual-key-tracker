@@ -28,3 +28,6 @@ Web browsers do not allow an ordinary webpage to silently attach a local file to
 
 
 Update: Daily email drafts now prefill the saved message. Default subject: Daily Key Reports - {employee} - {date}. Default message includes the employee name and does not add a Thank you/name signoff.
+
+
+Outlook draft behavior update: Settings now lets you choose Keep Outlook Signature or Prefill Email Message. Signature mode copies the report message for pasting while preserving Outlook's automatic signature. Prefill mode places the report message in the draft, but Outlook may omit its automatic signature.

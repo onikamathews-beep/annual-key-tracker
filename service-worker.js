@@ -1,4 +1,4 @@
-const CACHE_NAME = 'annual-key-tracker-v15';
+const CACHE_NAME = 'annual-key-tracker-v16';
 const LOCAL_ASSETS = [
   './',
   './index.html',

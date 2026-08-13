@@ -33,3 +33,6 @@ Update: Daily email drafts now prefill the saved message. Default subject: Daily
 
 
 Outlook signature-safe email behavior: the daily report email opens with To/CC/Subject prefilled, while the saved message is copied to the clipboard for pasting above the normal Outlook signature. This avoids mailto body text suppressing Outlook signatures.
+
+
+Outlook draft behavior update: Settings now lets you choose Keep Outlook Signature or Prefill Email Message. Signature mode copies the report message for pasting while preserving Outlook's automatic signature. Prefill mode places the report message in the draft, but Outlook may omit its automatic signature.
