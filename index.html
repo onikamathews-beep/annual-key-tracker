@@ -717,7 +717,7 @@ body.dashboard-focus .toolbar{margin-bottom:12px}
         <div class="field"><label for="dailyEmailTo">To</label><input id="dailyEmailTo" type="text" autocomplete="off" placeholder="name@company.com; another@company.com"></div>
         <div class="field"><label for="dailyEmailCc">CC</label><input id="dailyEmailCc" type="text" autocomplete="off" placeholder="Optional"></div>
         <div class="field full"><label for="dailyEmailSubject">Subject</label><input id="dailyEmailSubject" type="text" placeholder="Daily Key Report - {date}"><div class="email-template-help">Available placeholders: {date}, {date_short}, {employee}, {total}, {ppq}.</div></div>
-        <div class="field full"><label for="dailyEmailBody">Email Message</label><textarea id="dailyEmailBody" rows="5" placeholder="Attached is my daily report for {date}."></textarea><div class="email-template-help">The same placeholders can be used in the message.</div></div>
+        <div class="field full"><label for="dailyEmailBody">Email Message</label><textarea id="dailyEmailBody" rows="5" placeholder="Attached is my daily report for {date}."></textarea><div class="email-template-help">The same placeholders can be used in the message. To preserve your normal Outlook signature, the tracker copies this message to your clipboard instead of replacing the email body.</div></div>
         <div class="field full"><label for="dailyWorkbookName">Workbook File Name</label><input id="dailyWorkbookName" type="text" placeholder="Daily Keys - {employee} - {date}"><div class="email-template-help">Default: Daily Keys - {employee} - {date}. You can use {date}, {date_short}, {employee}, {total}, and {ppq}. The tracker adds .xlsx automatically.</div></div>
         <div class="workbook-settings">
           <div class="workbook-settings-head"><div><strong>Workbook Contents</strong><div class="subtle">Choose exactly what the Excel file includes. The default is Date (short) + <span id="wbListDefaultLabel">Key List</span> only.</div></div><div class="workbook-settings-actions"><button class="btn btn-sm" id="selectAllWorkbookFieldsBtn" type="button">Select All</button><button class="btn btn-sm" id="clearWorkbookFieldsBtn" type="button">Clear All</button></div></div>
@@ -742,7 +742,7 @@ body.dashboard-focus .toolbar{margin-bottom:12px}
           </div>
         </div>
       </div>
-      <div class="status-banner" style="margin-top:10px"><span>i</span><div><strong>The tracker prepares both pieces of the report.</strong><div class="subtle">It downloads the Excel workbook for the selected day and opens a new email with your saved recipients, subject, and message. Web browsers do not allow a normal website to silently attach a local file to Outlook, so attach the downloaded workbook to the opened draft before sending.</div></div></div>
+      <div class="status-banner" style="margin-top:10px"><span>i</span><div><strong>The tracker prepares both pieces of the report.</strong><div class="subtle">It downloads the Excel workbook, opens a new email with your saved recipients and subject, and copies your saved message so you can paste it above your normal Outlook signature. Web browsers do not allow a normal website to silently attach a local file to Outlook, so attach the downloaded workbook before sending.</div></div></div>
       <h3 style="margin:22px 0 10px">Automatic Holidays</h3>
       <div class="status-banner"><span>✓</span><div><strong>Recognized holidays are excluded automatically.</strong><div class="subtle">New Year’s Day, Martin Luther King Jr. Day, Memorial Day, observed Independence Day, Labor Day, Thanksgiving, and observed Christmas Day are locked and skipped when moving between workdays.</div></div></div>
       <h3 style="margin:22px 0 10px">Locked IPH Standards</h3>
@@ -902,7 +902,7 @@ const uid = () => (window.crypto && typeof window.crypto.randomUUID === 'functio
 function initialState(){
   const now = new Date();
   return {
-    version:16,
+    version:17,
     employeeName:'',
     setupComplete:false,
     _savedAt:0,
@@ -915,7 +915,7 @@ function initialState(){
     iphSettings:{scheduleStart:'07:00',scheduleEnd:'15:30',breakStart:'',breakEnd:'',defaultGoal:0,strongPct:100,outstandingPct:120},
     displayOptions:{enableKeyTracker:true,enableTallyCounter:true,enableScheduleIph:true,showLiveIph:true,showDashboardPerformance:true,showHeaderOutcomes:true,showCelebrations:true},
     dailyEmail:{
-      to:'',cc:'',subject:'Daily Key Report - {date}',body:'Hello,\n\nAttached is my Key & Tally Tracker report for {date}.\n\nThank you,\n{employee}',
+      to:'',cc:'',subject:'Daily Key Report - {date}',body:'Hello,\n\nAttached is my Key & Tally Tracker report for {date}.',
       workbookName:'Daily Keys - {employee} - {date}',
       workbookContents:{dateShort:true,employee:false,trackingMethod:false,summaryPpq:false,totalInteractions:false,contacted:false,snoozed:false,unable:false,keyTally:true,time:false,detailPpq:false,outcome:false,interactionCount:false}
     },
@@ -1274,6 +1274,8 @@ function migrateDisplayOptions(){
 }
 function migrateDailyEmailSettings(){
   const defaults=initialState().dailyEmail,saved=state.dailyEmail||{};
+  const legacyDefaultBody='Hello,\n\nAttached is my Key & Tally Tracker report for {date}.\n\nThank you,\n{employee}';
+  if(saved.body===legacyDefaultBody)saved.body=defaults.body;
   state.dailyEmail={...defaults,...saved,workbookContents:{...defaults.workbookContents,...(saved.workbookContents||{})}};
 }
 
@@ -1804,6 +1806,20 @@ function downloadDailyWorkbook(date){
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1200);
   return name;
 }
+function copyDailyEmailMessage(text){
+  if(!text)return true;
+  const ta=document.createElement('textarea');
+  ta.value=text;ta.setAttribute('readonly','');ta.style.position='fixed';ta.style.left='-9999px';ta.style.top='0';
+  document.body.appendChild(ta);ta.focus();ta.select();ta.setSelectionRange(0,ta.value.length);
+  let copied=false;
+  try{copied=document.execCommand('copy');}catch(err){copied=false;}
+  ta.remove();
+  if(!copied&&navigator.clipboard&&window.isSecureContext){
+    navigator.clipboard.writeText(text).catch(()=>{});
+    copied=true;
+  }
+  return copied;
+}
 function createDailyEmailReport(){
   const date=state.selectedDate,settings={...initialState().dailyEmail,...(state.dailyEmail||{})},to=emailList(settings.to),cc=emailList(settings.cc);
   const contents={...initialState().dailyEmail.workbookContents,...(settings.workbookContents||{})};
@@ -1821,15 +1837,20 @@ function createDailyEmailReport(){
   }
   const fileName=downloadDailyWorkbook(date);
   const subject=applyEmailTemplate(settings.subject,date),body=applyEmailTemplate(settings.body,date);
+  const messageCopied=copyDailyEmailMessage(body);
   const recipientPath=to.map(encodeURIComponent).join(',');
   const params=[];
   if(cc.length)params.push(`cc=${encodeURIComponent(cc.join(','))}`);
   if(subject)params.push(`subject=${encodeURIComponent(subject)}`);
-  if(body)params.push(`body=${encodeURIComponent(body)}`);
+  // Do not pass a mailto body. Outlook can suppress the user's automatic signature
+  // when an external mailto link provides body content.
   const mailto=`mailto:${recipientPath}${params.length?'?'+params.join('&'):''}`;
-  toast(`Excel report downloaded: ${fileName}. Attach it to the email draft before sending.`);
+  if(body&&messageCopied)toast(`Excel report downloaded: ${fileName}. Email message copied — paste it above your Outlook signature, then attach the workbook.`);
+  else if(body)toast(`Excel report downloaded: ${fileName}. Outlook will keep your signature; paste your saved report message above it, then attach the workbook.`);
+  else toast(`Excel report downloaded: ${fileName}. Attach it to the email draft before sending.`);
   setTimeout(()=>{window.location.href=mailto;},150);
 }
+
 
 function reportRange(scope){
   const s=state.selectedDate;

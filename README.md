@@ -22,3 +22,6 @@ Web browsers do not allow an ordinary webpage to silently attach a local file to
 3. Replace files with matching names.
 4. Commit the update.
 5. Reopen the GitHub Pages site and press **Ctrl + Shift + R** once if needed.
+
+- Outlook signature-safe email launch: To/CC/Subject are prefilled, the saved report message is copied to the clipboard, and the mail body is left untouched so Outlook can insert the normal automatic signature.
+- The default email message no longer adds “Thank you” or the employee name.

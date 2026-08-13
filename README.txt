@@ -24,3 +24,6 @@ Upload every file in this folder to the root of the existing GitHub repository a
 7. Press **Ctrl + Shift + R** once if the older version remains cached.
 
 Your existing tracker entries and settings remain stored in the browser and are preserved by this update.
+
+- Outlook signature-safe email launch: To/CC/Subject are prefilled, the saved report message is copied to the clipboard, and the mail body is left untouched so Outlook can insert the normal automatic signature.
+- The default email message no longer adds “Thank you” or the employee name.
