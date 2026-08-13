@@ -2234,7 +2234,7 @@ $('#stickyUndoTally').addEventListener('click', () => undoLastTallyForDate(today
     if (!state.welcomeDone) showWelcome();
 
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('./service-worker.js?build=17', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./service-worker.js?build=18', { updateViaCache: 'none' })
         .then(registration => registration.update())
         .catch(error => console.warn('Service worker registration failed:', error));
     }
