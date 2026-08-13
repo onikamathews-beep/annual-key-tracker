@@ -247,6 +247,8 @@ body.topbar-unpinned .topbar{position:relative;top:auto}
 .simple-entry-row .field{min-width:0}
 .simple-entry-row textarea{min-height:52px;max-height:110px;resize:vertical}
 .keys-field textarea{font-size:16px}
+.key-drop-target{transition:border-color .15s,box-shadow .15s,background .15s}
+.key-drop-target.drag-over{border-color:var(--primary)!important;box-shadow:0 0 0 4px color-mix(in srgb,var(--primary) 18%,transparent)!important;background:color-mix(in srgb,var(--primary) 7%,var(--panel-2))!important}
 .entry-helper-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:5px;color:var(--muted);font-size:12px}
 .entry-helper-row strong{color:var(--primary);white-space:nowrap}
 .hidden-entry-controls{display:none!important}
@@ -605,7 +607,7 @@ input.compact-entry{resize:none}
       </div>
       <div class="compact-body" id="compactTrackerBody">
         <div class="compact-entry-wrap" id="compactEntryWrap">
-          <textarea class="compact-entry" id="compactKeysInput" rows="1" placeholder="Enter keys" aria-label="Compact key entry"></textarea>
+          <textarea class="compact-entry key-drop-target" id="compactKeysInput" rows="1" placeholder="Enter keys or drop Hubble links" aria-label="Compact key entry"></textarea>
           <input class="compact-entry hidden" id="compactTallyInput" type="number" min="1" max="999" inputmode="numeric" placeholder="Tally" aria-label="Compact tally amount">
           <button class="compact-add-btn" id="compactAddBtn" type="button">Add Keys</button>
         </div>
@@ -670,8 +672,8 @@ input.compact-entry{resize:none}
           </div>
           <div class="field keys-field" id="keyEntryField">
             <label for="keysInput">Keys</label>
-            <textarea id="keysInput" rows="2" placeholder="Paste comma-separated keys here"></textarea>
-            <div class="entry-helper-row"><span>Each comma creates one interaction. Press Enter to submit.</span><strong id="entryCountText">0 keys</strong></div>
+            <textarea class="key-drop-target" id="keysInput" rows="2" placeholder="Paste keys or drop Hubble intervention links here"></textarea>
+            <div class="entry-helper-row"><span>Type/paste keys or drop Hubble intervention links. Group links can add multiple keys. Press Enter to submit.</span><strong id="entryCountText">0 keys</strong></div>
           </div>
           <div class="field keys-field tally-field hidden" id="tallyEntryField">
             <label>Tally Counter</label>
@@ -1297,7 +1299,69 @@ function getPriorPPQ(s){
   return 'Appeals PPQ';
 }
 function normalizeKey(k){ return String(k).trim().toUpperCase().replace(/\s+/g,' '); }
-function parseKeys(text){ return text.split(/[,\n\r]+/).map(v=>v.trim()).filter(Boolean); }
+function parseKeys(text){
+  let source=String(text||'');
+  // Markdown-style links such as [https://...](https://...) should count once, using the target URL.
+  source=source.replace(/\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/gi,'$1');
+  const keys=[];
+  const groupRe=/https?:\/\/hubble\.covermymeds\.com\/call-group-intervention\/([^/?#\s]+)(?:\/[^?#\s]*)?(?:[?#][^\s]*)?/gi;
+  source=source.replace(groupRe,(full,keyList)=>{
+    String(keyList||'').split(',').map(v=>v.trim()).filter(Boolean).forEach(k=>keys.push(k));
+    return ' ';
+  });
+  const singleRe=/https?:\/\/hubble\.covermymeds\.com\/intervention\/([^/?#,\s]+)(?:[/?#][^\s]*)?/gi;
+  source=source.replace(singleRe,(full,key)=>{ if(key) keys.push(String(key).trim()); return ' '; });
+  // Ignore unrelated web links rather than treating pieces of them as keys.
+  source=source.replace(/https?:\/\/[^\s]+/gi,' ');
+  source.split(/[\s,;|]+/).map(v=>v.trim().replace(/^[\[\]()<>]+|[\[\]()<>.,:]+$/g,'')).filter(Boolean).forEach(k=>keys.push(k));
+  return keys;
+}
+function containsHubbleInterventionLink(text){
+  return /https?:\/\/hubble\.covermymeds\.com\/(?:call-group-)?intervention\//i.test(String(text||''));
+}
+function insertExtractedKeys(target,keys){
+  if(!target||!keys.length)return;
+  const insertion=keys.join('\n');
+  const start=Number.isFinite(target.selectionStart)?target.selectionStart:target.value.length;
+  const end=Number.isFinite(target.selectionEnd)?target.selectionEnd:start;
+  const before=target.value.slice(0,start),after=target.value.slice(end);
+  const prefix=before&&!/[\s,;|]$/.test(before)?'\n':'';
+  const suffix=after&&!/^[\s,;|]/.test(after)?'\n':'';
+  target.value=before+prefix+insertion+suffix+after;
+  const caret=(before+prefix+insertion).length;
+  try{target.setSelectionRange(caret,caret);}catch(e){}
+  target.dispatchEvent(new Event('input',{bubbles:true}));
+  target.focus();
+}
+function enableHubbleKeyDrop(target){
+  if(!target)return;
+  target.addEventListener('dragover',event=>{
+    const dt=event.dataTransfer;
+    if(!dt)return;
+    event.preventDefault();
+    dt.dropEffect='copy';
+    target.classList.add('drag-over');
+  });
+  target.addEventListener('dragleave',()=>target.classList.remove('drag-over'));
+  target.addEventListener('drop',event=>{
+    event.preventDefault();
+    target.classList.remove('drag-over');
+    const dt=event.dataTransfer;
+    const raw=(dt&&dt.getData('text/uri-list'))||(dt&&dt.getData('text/plain'))||'';
+    const keys=parseKeys(raw);
+    if(!keys.length){toast('No Hubble intervention keys were found in that drop.');return;}
+    insertExtractedKeys(target,keys);
+    toast(`${keys.length} Hubble key${keys.length===1?'':'s'} pulled from the link${keys.length===1?'':'s'}.`);
+  });
+  target.addEventListener('paste',event=>{
+    const raw=event.clipboardData?.getData('text/plain')||'';
+    if(!containsHubbleInterventionLink(raw))return;
+    const keys=parseKeys(raw);
+    if(!keys.length)return;
+    event.preventDefault();
+    insertExtractedKeys(target,keys);
+  });
+}
 function summaryForRange(start,end){
   let entries=[]; let workdays=0; let activeDays=0;
   let d=start;
@@ -1437,7 +1501,7 @@ function renderCompactTracker(){
   const nothing=!showEntry&&!showAdd&&!showCount&&!showRating&&!showLastKey;$('#compactEmptyNote').classList.toggle('hidden',!nothing);
   $('#compactKeysInput').disabled=!canEnter||mode!=='keys';$('#compactTallyInput').disabled=!canEnter||mode!=='tally';
   const addBtn=$('#compactAddBtn');addBtn.textContent=mode==='tally'?'Add Tally':'Add Keys';addBtn.disabled=!canEnter||!showEntry||!['keys','tally'].includes(mode);
-  $('#compactKeysInput').placeholder=canEnter?'Enter or paste keys':'Entry unavailable';
+  $('#compactKeysInput').placeholder=canEnter?'Enter keys or drop Hubble links':'Entry unavailable';
   $('#compactTallyInput').placeholder=canEnter?'Tally amount':'Unavailable';
 }
 function clearCompactEntryDraft(){
@@ -2122,6 +2186,7 @@ $('#compactModeBtn').addEventListener('click',()=>setCompactMode(true));
 $('#expandTrackerBtn').addEventListener('click',()=>setCompactMode(false));
 $('#compactAddBtn').addEventListener('click',submitCompactEntry);
 $('#compactKeysInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();submitCompactEntry();}});
+enableHubbleKeyDrop($('#compactKeysInput'));
 $('#compactTallyInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing){e.preventDefault();submitCompactEntry();}});
 $('#selectedDateInput').addEventListener('change',e=>updateSelectedDate(e.target.value));
 $('#prevDate').addEventListener('click',()=>updateSelectedDate(addWorkdays(state.selectedDate,-1)));
@@ -2131,6 +2196,7 @@ $('#editScheduleToolbarBtn').addEventListener('click',openDaySchedule);
 $('#yearSelect').addEventListener('change',e=>{const y=Number(e.target.value),d=parseDate(state.selectedDate);d.setFullYear(y);closeAppMenu();updateSelectedDate(dateKey(d));});
 $('#keysInput').addEventListener('input',e=>{const count=parseKeys(e.target.value).length;$('#entryCountPreview').value=count;$('#entryCountText').textContent=`${count} key${count===1?'':'s'}`;});
 $('#keysInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();submitKeyInput();}});
+enableHubbleKeyDrop($('#keysInput'));
 $('#clearInputBtn').addEventListener('click',()=>{$('#keysInput').value='';$('#entryCountPreview').value='0';$('#entryCountText').textContent='0 keys';});
 $('#ppqSelect').addEventListener('change',e=>{if(isLocked(state.selectedDate))return;getMeta(state.selectedDate).ppq=e.target.value;saveState();renderAll();});
 $('#addKeysBtn').addEventListener('click',submitKeyInput);
@@ -2190,7 +2256,7 @@ setInterval(()=>{const now=todayKey();if(now!==lastToday){lastToday=now;state.se
 async function startTracker(){
   // Refresh the installed app cache when this build is deployed to GitHub Pages or another web host.
   if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
-    navigator.serviceWorker.register('./service-worker.js?build=21',{updateViaCache:'none'}).then(reg=>reg.update()).catch(()=>{});
+    navigator.serviceWorker.register('./service-worker.js?build=22',{updateViaCache:'none'}).then(reg=>reg.update()).catch(()=>{});
   }
   await hydrateFromIndexedDb();
   applyTheme(state.theme);
