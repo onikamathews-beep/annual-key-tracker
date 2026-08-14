@@ -113,6 +113,13 @@ body.topbar-unpinned .topbar{position:relative;top:auto}
 .data-table td{padding:10px 11px;border-bottom:1px solid var(--border);vertical-align:middle;background:var(--panel)}
 .data-table tr:last-child td{border-bottom:0}
 .data-table tr.highlight td{animation:flash 1.8s ease}
+.pae-inline{display:inline-flex;align-items:center;gap:7px;flex-wrap:wrap;margin-left:10px;vertical-align:middle}
+.pae-toggle{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;color:var(--text);white-space:nowrap}
+.pae-toggle input{width:16px;height:16px;margin:0;accent-color:var(--primary)}
+.pae-incident-input{width:145px;max-width:100%;border:1px solid var(--border);background:var(--panel-2);color:var(--text);border-radius:8px;padding:6px 8px;font-size:12px;font-weight:650}
+.pae-incident-input::placeholder{color:var(--muted)}
+.pae-readonly{display:inline-flex;align-items:center;gap:6px;margin-left:10px;flex-wrap:wrap}
+.pae-incident-text{font-size:11px;font-weight:750;color:var(--muted)}
 @keyframes flash{0%,100%{background:var(--panel)}30%{background:color-mix(in srgb,var(--accent) 35%,var(--panel))}}
 .outcome-select{border:1px solid var(--border);background:var(--panel-2);color:var(--text);border-radius:8px;padding:7px 8px;font-weight:700}
 .badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:800;background:var(--panel-2);border:1px solid var(--border)}
@@ -789,6 +796,7 @@ input.compact-entry{resize:none}
       <div class="subtle" style="margin-bottom:10px">Turn tracker tools on or off to match the employee’s workflow. At least one tracking method must remain enabled.</div>
       <div class="feature-toggle-grid">
         <label class="feature-toggle"><input type="checkbox" id="enableKeyTrackerToggle"><span><strong>Key Tracker</strong><small>Allow employees to paste or type the actual keys they worked.</small></span></label>
+        <label class="feature-toggle"><input type="checkbox" id="enablePaeTrackingToggle"><span><strong>PAE incident tracking</strong><small>Add a PAE checkbox beside each key. Checking it opens an Incident Number field that saves with that key.</small></span></label>
         <label class="feature-toggle"><input type="checkbox" id="enableTallyCounterToggle"><span><strong>Tally Counter</strong><small>Allow employees to record interaction counts without entering individual keys.</small></span></label>
         <label class="feature-toggle"><input type="checkbox" id="enableScheduleIphToggle"><span><strong>Schedule &amp; IPH tools</strong><small>Require the daily schedule and calculate IPH, projections, and ratings.</small></span></label>
         <label class="feature-toggle"><input type="checkbox" id="showLiveIphToggle"><span><strong>Live IPH &amp; Rating</strong><small>Show the live IPH and rating section on the Today page.</small></span></label>
@@ -1009,7 +1017,7 @@ function initialState(){
     theme:'original',
     customTheme:{...DEFAULT_CUSTOM},
     iphSettings:{scheduleStart:'07:00',scheduleEnd:'15:30',breakStart:'',breakEnd:'',defaultGoal:0,strongPct:100,outstandingPct:120},
-    displayOptions:{enableKeyTracker:true,enableTallyCounter:true,enableScheduleIph:true,showLiveIph:true,showDashboardPerformance:true,showHeaderOutcomes:true,showCelebrations:true,topbarPinned:true,compactShowEntry:true,compactShowAdd:true,compactShowCount:true,compactShowRating:true,compactShowLastKey:false},
+    displayOptions:{enableKeyTracker:true,enableTallyCounter:true,enablePaeTracking:false,enableScheduleIph:true,showLiveIph:true,showDashboardPerformance:true,showHeaderOutcomes:true,showCelebrations:true,topbarPinned:true,compactShowEntry:true,compactShowAdd:true,compactShowCount:true,compactShowRating:true,compactShowLastKey:false},
     compactMode:false,
     dailyEmail:{
       to:'',cc:'',subject:'Daily Key Reports - {employee} - {date}',body:'Hello,\n\nAttached is the daily key report for {employee} for {date}.',
@@ -1039,7 +1047,7 @@ let indexedWriteChain = Promise.resolve();
 function prepareLoadedState(){
   // Preserve existing entries while moving older tracker versions to the simpler Today-first layout.
   const upgradedFromOlderLayout = Number(state.version || 0) < 4;
-  state.version = 16;
+  state.version = 17;
   state.selectedDate = todayKey();
   state.selectedYear = new Date().getFullYear();
   if(upgradedFromOlderLayout) state.defaultView = 'today';
@@ -1639,10 +1647,19 @@ function refreshIphPanel(){
   const perf=state.displayOptions.enableScheduleIph!==false?scheduleIphMetrics(state.selectedDate):{valid:false},header=$('#headerRating'),r=perf.valid?perf.projectedRating:ratingForPercent(null);if(header){header.textContent=r.name;header.className=`rating-value ${r.className}`;}
   if(state.compactMode===true)renderCompactTracker();
 }
+function paeControlsHTML(entry,locked){
+  if(state.displayOptions.enablePaeTracking!==true||entry?.kind==='tally')return '';
+  const checked=entry.pae===true,incident=String(entry.incidentNumber||'');
+  if(locked){
+    if(!checked)return '';
+    return `<span class="pae-readonly"><span class="badge">PAE</span>${incident?`<span class="pae-incident-text">Incident ${esc(incident)}</span>`:''}</span>`;
+  }
+  return `<span class="pae-inline"><label class="pae-toggle"><input type="checkbox" data-pae-id="${entry.id}" ${checked?'checked':''}> PAE</label><input class="pae-incident-input ${checked?'':'hidden'}" data-pae-incident-id="${entry.id}" type="text" value="${esc(incident)}" placeholder="Incident #" aria-label="Incident number for ${esc(entry.key||'key')}"></span>`;
+}
 function renderToday(){
   const s=state.selectedDate,entries=getEntries(s),displayEntries=sortedEntriesNewest(entries),locked=isLocked(s),mode=effectiveTrackingMode(s);
   const emptyMessage=locked?'No activity was recorded for this day.':mode?`No ${mode==='tally'?'tallies':'keys'} recorded for this day.`:'Choose Key Tracker or Tally Counter above to begin.';
-  $('#todayView').innerHTML=`<div class="activity-head"><div><h2>Activity History</h2><div class="subtle">Newest activity appears first.</div></div><div class="activity-head-actions"><button class="btn btn-accent btn-sm daily-email-btn" id="dailyEmailReportBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 6h18v12H3z"/><path d="m4 7 8 6 8-6"/></svg><span>Email Daily Report</span></button><button class="btn btn-sm daily-email-btn" id="downloadDailyWorkbookBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg><span>Download Workbook</span></button><span class="badge">${totalEntries(entries)} interactions</span></div></div><div class="card table-wrap"><table class="data-table"><thead><tr><th style="width:55px">#</th><th>Key / Tally</th><th style="width:105px">Time</th><th>PPQ Type</th><th>Outcome</th><th style="width:100px">Action</th></tr></thead><tbody>${displayEntries.length?displayEntries.map((e,i)=>`<tr data-entry-id="${e.id}" class="grouped-row ${groupClass(e)} ${highlightIds.includes(e.id)?'highlight':''}"><td>${i+1}</td><td><strong>${esc(entryLabel(e))}</strong>${e.kind==='tally'?`<span class="badge entry-type-badge">${entryCount(e)} interactions</span>`:''}</td><td class="activity-time">${esc(entryTimeLabel(e))}</td><td>${esc(e.ppq)}</td><td>${locked?outcomeBadge(e.outcome):`<select class="outcome-select" data-outcome-id="${e.id}">${OUTCOMES.map(o=>`<option ${o===e.outcome?'selected':''}>${o}</option>`).join('')}</select>`}</td><td>${locked?'<span class="subtle">Locked</span>':`<button class="btn btn-danger btn-sm" data-delete-id="${e.id}">Delete</button>`}</td></tr>`).join(''):`<tr><td colspan="6"><div class="empty">${esc(emptyMessage)}</div></td></tr>`}</tbody></table></div>`;
+  $('#todayView').innerHTML=`<div class="activity-head"><div><h2>Activity History</h2><div class="subtle">Newest activity appears first.</div></div><div class="activity-head-actions"><button class="btn btn-accent btn-sm daily-email-btn" id="dailyEmailReportBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 6h18v12H3z"/><path d="m4 7 8 6 8-6"/></svg><span>Email Daily Report</span></button><button class="btn btn-sm daily-email-btn" id="downloadDailyWorkbookBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg><span>Download Workbook</span></button><span class="badge">${totalEntries(entries)} interactions</span></div></div><div class="card table-wrap"><table class="data-table"><thead><tr><th style="width:55px">#</th><th>Key / Tally</th><th style="width:105px">Time</th><th>PPQ Type</th><th>Outcome</th><th style="width:100px">Action</th></tr></thead><tbody>${displayEntries.length?displayEntries.map((e,i)=>`<tr data-entry-id="${e.id}" class="grouped-row ${groupClass(e)} ${highlightIds.includes(e.id)?'highlight':''}"><td>${i+1}</td><td><strong>${esc(entryLabel(e))}</strong>${e.kind==='tally'?`<span class="badge entry-type-badge">${entryCount(e)} interactions</span>`:paeControlsHTML(e,locked)}</td><td class="activity-time">${esc(entryTimeLabel(e))}</td><td>${esc(e.ppq)}</td><td>${locked?outcomeBadge(e.outcome):`<select class="outcome-select" data-outcome-id="${e.id}">${OUTCOMES.map(o=>`<option ${o===e.outcome?'selected':''}>${o}</option>`).join('')}</select>`}</td><td>${locked?'<span class="subtle">Locked</span>':`<button class="btn btn-danger btn-sm" data-delete-id="${e.id}">Delete</button>`}</td></tr>`).join(''):`<tr><td colspan="6"><div class="empty">${esc(emptyMessage)}</div></td></tr>`}</tbody></table></div>`;
   setTimeout(()=>{highlightIds=[];},2000);
 }
 function outcomeBadge(o){ return `<span class="badge ${o==='Contacted'?'contact':o==='Snoozed'?'snooze':'unable'}">${esc(o)}</span>`; }
@@ -1843,6 +1860,7 @@ function syncDisplayOptionControls(){
 function openSettings(){
   $('#settingsName').value=state.employeeName;$('#defaultViewSelect').value=state.defaultView;
   $('#enableKeyTrackerToggle').checked=state.displayOptions.enableKeyTracker!==false;
+  $('#enablePaeTrackingToggle').checked=state.displayOptions.enablePaeTracking===true;
   $('#enableTallyCounterToggle').checked=state.displayOptions.enableTallyCounter!==false;
   $('#enableScheduleIphToggle').checked=state.displayOptions.enableScheduleIph!==false;
   $('#showLiveIphToggle').checked=state.displayOptions.showLiveIph!==false;
@@ -1871,7 +1889,7 @@ function downloadBackup(){
   a.href=URL.createObjectURL(blob); const safe=(state.employeeName||'Employee').replace(/[^a-z0-9]+/gi,'_'); a.download=`${safe}_Key_Tally_Tracker_Full_Backup_${todayKey()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),500); toast('Full backup downloaded.');
 }
 function restoreBackup(file){
-  const reader=new FileReader(); reader.onload=()=>{ try{ const data=JSON.parse(reader.result); if(!data.entries||!data.dayMeta) throw new Error('Invalid backup'); if(!confirm('Restore this backup? The tracker currently saved in this browser will be replaced.')) return; state=mergeSavedState(data);state.version=16;migrateEntryGroups();migrateTrackingModes();migrateIphSettings();migrateDailySchedules();migrateDisplayOptions();migrateDailyEmailSettings(); saveState(); applyTheme(state.theme); closeModal('settingsModal'); renderAll(); toast('Backup restored.'); }catch(e){ alert('This file could not be restored. Choose a valid Key Tracker backup JSON file.'); } }; reader.readAsText(file);
+  const reader=new FileReader(); reader.onload=()=>{ try{ const data=JSON.parse(reader.result); if(!data.entries||!data.dayMeta) throw new Error('Invalid backup'); if(!confirm('Restore this backup? The tracker currently saved in this browser will be replaced.')) return; state=mergeSavedState(data);state.version=17;migrateEntryGroups();migrateTrackingModes();migrateIphSettings();migrateDailySchedules();migrateDisplayOptions();migrateDailyEmailSettings(); saveState(); applyTheme(state.theme); closeModal('settingsModal'); renderAll(); toast('Backup restored.'); }catch(e){ alert('This file could not be restored. Choose a valid Key Tracker backup JSON file.'); } }; reader.readAsText(file);
 }
 
 function excelCellText(ws,r,c){const cell=ws[XLSX.utils.encode_cell({r,c})];if(!cell||cell.v==null)return '';return String(cell.v).trim();}
@@ -2219,7 +2237,7 @@ $('#saveSettingsBtn').addEventListener('click',()=>{
   const name=$('#settingsName').value.trim();if(!name){toast('Employee name is required.');return;}
   const enableKeyTracker=$('#enableKeyTrackerToggle').checked,enableTallyCounter=$('#enableTallyCounterToggle').checked;
   if(!enableKeyTracker&&!enableTallyCounter){toast('Keep Key Tracker or Tally Counter turned on.');return;}
-  requestPersistentStorage();state.employeeName=name;state.defaultView=$('#defaultViewSelect').value;state.displayOptions={enableKeyTracker,enableTallyCounter,enableScheduleIph:$('#enableScheduleIphToggle').checked,showLiveIph:$('#showLiveIphToggle').checked,showDashboardPerformance:$('#showDashboardPerformanceToggle').checked,showHeaderOutcomes:$('#showHeaderOutcomesToggle').checked,showCelebrations:$('#showCelebrationsToggle').checked,topbarPinned:$('#topbarPinnedToggle').checked,compactShowEntry:$('#compactShowEntryToggle').checked,compactShowAdd:$('#compactShowAddToggle').checked,compactShowCount:$('#compactShowCountToggle').checked,compactShowRating:$('#compactShowRatingToggle').checked,compactShowLastKey:$('#compactShowLastKeyToggle').checked};state.dailyEmail={to:$('#dailyEmailTo').value.trim(),cc:$('#dailyEmailCc').value.trim(),subject:$('#dailyEmailSubject').value.trim()||initialState().dailyEmail.subject,body:$('#dailyEmailBody').value,launchMode:$('#dailyEmailLaunchMode').value||initialState().dailyEmail.launchMode,emailBehaviorVersion:3,workbookName:$('#dailyWorkbookName').value.trim()||initialState().dailyEmail.workbookName,workbookContents:workbookContentsFromSettings()};saveState();closeModal('settingsModal');renderAll();toast('Settings saved.');
+  requestPersistentStorage();state.employeeName=name;state.defaultView=$('#defaultViewSelect').value;state.displayOptions={enableKeyTracker,enableTallyCounter,enablePaeTracking:$('#enablePaeTrackingToggle').checked,enableScheduleIph:$('#enableScheduleIphToggle').checked,showLiveIph:$('#showLiveIphToggle').checked,showDashboardPerformance:$('#showDashboardPerformanceToggle').checked,showHeaderOutcomes:$('#showHeaderOutcomesToggle').checked,showCelebrations:$('#showCelebrationsToggle').checked,topbarPinned:$('#topbarPinnedToggle').checked,compactShowEntry:$('#compactShowEntryToggle').checked,compactShowAdd:$('#compactShowAddToggle').checked,compactShowCount:$('#compactShowCountToggle').checked,compactShowRating:$('#compactShowRatingToggle').checked,compactShowLastKey:$('#compactShowLastKeyToggle').checked};state.dailyEmail={to:$('#dailyEmailTo').value.trim(),cc:$('#dailyEmailCc').value.trim(),subject:$('#dailyEmailSubject').value.trim()||initialState().dailyEmail.subject,body:$('#dailyEmailBody').value,launchMode:$('#dailyEmailLaunchMode').value||initialState().dailyEmail.launchMode,emailBehaviorVersion:3,workbookName:$('#dailyWorkbookName').value.trim()||initialState().dailyEmail.workbookName,workbookContents:workbookContentsFromSettings()};saveState();closeModal('settingsModal');renderAll();toast('Settings saved.');
 });
 $('#finishSetupBtn').addEventListener('click',()=>{const name=$('#setupName').value.trim();if(!name){toast('Enter the employee name to continue.');return;}requestPersistentStorage();state.employeeName=name;state.theme=$('#setupTheme').value;state.setupComplete=true;state.currentView='today';state.defaultView='today';saveState();applyTheme(state.theme);closeModal('setupModal');renderAll();});
 $('#cornerRadius').addEventListener('input',e=>{$('#radiusValue').textContent=e.target.value;state.customTheme.radius=Number(e.target.value);applyTheme('custom');renderThemeGrid();});
@@ -2238,7 +2256,18 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('change',e=>{
   if(e.target.matches('[data-outcome-id]')){if(isLocked(state.selectedDate))return;const item=getEntries(state.selectedDate).find(x=>x.id===e.target.dataset.outcomeId);if(item){item.outcome=e.target.value;saveState();renderAll();}}
+  if(e.target.matches('[data-pae-id]')){
+    if(isLocked(state.selectedDate))return;
+    const item=getEntries(state.selectedDate).find(x=>x.id===e.target.dataset.paeId);
+    if(item&&item.kind!=='tally'){item.pae=e.target.checked;saveState();renderToday();}
+    return;
+  }
   if(e.target.matches('[data-custom-color]')){state.customTheme[e.target.dataset.customColor]=e.target.value;applyTheme('custom');renderThemeGrid();renderAll();}
+});
+document.addEventListener('input',e=>{
+  if(!e.target.matches('[data-pae-incident-id]')||isLocked(state.selectedDate))return;
+  const item=getEntries(state.selectedDate).find(x=>x.id===e.target.dataset.paeIncidentId);
+  if(item&&item.kind!=='tally'){item.incidentNumber=e.target.value;saveState();}
 });
 
 // Re-save immediately when the page is backgrounded or closed.
@@ -2254,7 +2283,7 @@ setInterval(()=>{const now=todayKey();if(now!==lastToday){lastToday=now;state.se
 async function startTracker(){
   // Refresh the installed app cache when this build is deployed to GitHub Pages or another web host.
   if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
-    navigator.serviceWorker.register('./service-worker.js?build=22',{updateViaCache:'none'}).then(reg=>reg.update()).catch(()=>{});
+    navigator.serviceWorker.register('./service-worker.js?build=24',{updateViaCache:'none'}).then(reg=>reg.update()).catch(()=>{});
   }
   await hydrateFromIndexedDb();
   applyTheme(state.theme);
