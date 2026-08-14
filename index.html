@@ -113,11 +113,12 @@ body.topbar-unpinned .topbar{position:relative;top:auto}
 .data-table td{padding:10px 11px;border-bottom:1px solid var(--border);vertical-align:middle;background:var(--panel)}
 .data-table tr:last-child td{border-bottom:0}
 .data-table tr.highlight td{animation:flash 1.8s ease}
-.pae-inline{display:inline-flex;align-items:center;gap:7px;flex-wrap:wrap;margin-left:10px;vertical-align:middle}
-.pae-toggle{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;color:var(--text);white-space:nowrap}
-.pae-toggle input{width:16px;height:16px;margin:0;accent-color:var(--primary)}
-.pae-incident-input{width:145px;max-width:100%;border:1px solid var(--border);background:var(--panel-2);color:var(--text);border-radius:8px;padding:6px 8px;font-size:12px;font-weight:650}
+.pae-inline{display:inline-flex;align-items:center;gap:4px;flex-wrap:nowrap;margin-left:6px;vertical-align:middle;white-space:nowrap}
+.pae-toggle{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:800;color:var(--text);white-space:nowrap}
+.pae-toggle input{width:13px;height:13px;margin:0;accent-color:var(--primary)}
+.pae-incident-input{box-sizing:border-box;width:88px;height:26px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);border-radius:7px;padding:3px 6px;font-size:10px;font-weight:650;line-height:1.1}
 .pae-incident-input::placeholder{color:var(--muted)}
+.pae-incident-input.pae-reserved-hidden{visibility:hidden;opacity:0;pointer-events:none}
 .pae-readonly{display:inline-flex;align-items:center;gap:6px;margin-left:10px;flex-wrap:wrap}
 .pae-incident-text{font-size:11px;font-weight:750;color:var(--muted)}
 @keyframes flash{0%,100%{background:var(--panel)}30%{background:color-mix(in srgb,var(--accent) 35%,var(--panel))}}
@@ -1654,7 +1655,7 @@ function paeControlsHTML(entry,locked){
     if(!checked)return '';
     return `<span class="pae-readonly"><span class="badge">PAE</span>${incident?`<span class="pae-incident-text">Incident ${esc(incident)}</span>`:''}</span>`;
   }
-  return `<span class="pae-inline"><label class="pae-toggle"><input type="checkbox" data-pae-id="${entry.id}" ${checked?'checked':''}> PAE</label><input class="pae-incident-input ${checked?'':'hidden'}" data-pae-incident-id="${entry.id}" type="text" value="${esc(incident)}" placeholder="Incident #" aria-label="Incident number for ${esc(entry.key||'key')}"></span>`;
+  return `<span class="pae-inline"><label class="pae-toggle"><input type="checkbox" data-pae-id="${entry.id}" ${checked?'checked':''}> PAE</label><input class="pae-incident-input ${checked?'':'pae-reserved-hidden'}" data-pae-incident-id="${entry.id}" type="text" value="${esc(incident)}" placeholder="Incident #" aria-label="Incident number for ${esc(entry.key||'key')}"></span>`;
 }
 function renderToday(){
   const s=state.selectedDate,entries=getEntries(s),displayEntries=sortedEntriesNewest(entries),locked=isLocked(s),mode=effectiveTrackingMode(s);
@@ -2283,7 +2284,7 @@ setInterval(()=>{const now=todayKey();if(now!==lastToday){lastToday=now;state.se
 async function startTracker(){
   // Refresh the installed app cache when this build is deployed to GitHub Pages or another web host.
   if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
-    navigator.serviceWorker.register('./service-worker.js?build=24',{updateViaCache:'none'}).then(reg=>reg.update()).catch(()=>{});
+    navigator.serviceWorker.register('./service-worker.js?build=25',{updateViaCache:'none'}).then(reg=>reg.update()).catch(()=>{});
   }
   await hydrateFromIndexedDb();
   applyTheme(state.theme);
