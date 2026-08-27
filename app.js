@@ -1462,46 +1462,197 @@
     toast('Backup downloaded.');
   }
 
+  function entryMergeSignature(entry) {
+    const type = normalizeMode(entry?.type) || 'tally';
+    return JSON.stringify({
+      type,
+      keys: type === 'keys' ? (entry.keys || []).map(normalizedKey) : [],
+      count: type === 'keys' ? 1 : Math.max(1, Math.floor(Number(entry.count || 1))),
+      outcome: normalizeOutcome(entry.outcome),
+      workflow: normalizeWorkflow(entry.workflow),
+      time: String(entry.time || ''),
+      timeZone: String(entry.timeZone || '')
+    });
+  }
+
+  function noteMergeSignature(note) {
+    return JSON.stringify({
+      type: NOTE_TYPES.includes(note?.type) ? note.type : 'Other',
+      text: String(note?.text || '').trim(),
+      localTime: String(note?.localTime || ''),
+      timeZone: String(note?.timeZone || '')
+    });
+  }
+
+  function mergeItemCollection(currentItems, importedItems, signatureFor, idPrefix) {
+    const merged = currentItems.map(item => ({ ...item }));
+    const currentById = new Map();
+    const availableBySignature = new Map();
+    const matchedBySignature = new Map();
+
+    merged.forEach(item => {
+      if (item.id) currentById.set(String(item.id), item);
+      const signature = signatureFor(item);
+      availableBySignature.set(signature, (availableBySignature.get(signature) || 0) + 1);
+    });
+
+    const consumeCurrentMatch = signature => {
+      const available = availableBySignature.get(signature) || 0;
+      const matched = matchedBySignature.get(signature) || 0;
+      if (matched >= available) return false;
+      matchedBySignature.set(signature, matched + 1);
+      return true;
+    };
+
+    let added = 0;
+    let duplicates = 0;
+    let conflicts = 0;
+
+    importedItems.forEach(importedItem => {
+      const item = { ...importedItem };
+      const id = item.id ? String(item.id) : '';
+      const signature = signatureFor(item);
+
+      if (id && currentById.has(id)) {
+        if (signatureFor(currentById.get(id)) === signature) {
+          consumeCurrentMatch(signature);
+          duplicates += 1;
+        } else {
+          conflicts += 1;
+        }
+        return;
+      }
+
+      if (consumeCurrentMatch(signature)) {
+        duplicates += 1;
+        return;
+      }
+
+      if (!id) item.id = createId(idPrefix);
+      merged.push(item);
+      currentById.set(String(item.id), item);
+      added += 1;
+    });
+
+    return { items: merged, added, duplicates, conflicts };
+  }
+
+  function mergeBackupState(parsed) {
+    const currentState = normalizeLoadedState(state);
+    const importedState = normalizeLoadedState(parsed);
+    const mergedDays = { ...currentState.days };
+    const stats = {
+      daysAdded: 0,
+      daysUpdated: 0,
+      entriesAdded: 0,
+      notesAdded: 0,
+      duplicates: 0,
+      conflicts: 0
+    };
+
+    Object.entries(importedState.days).forEach(([date, importedSource]) => {
+      const hadCurrentDay = Boolean(currentState.days[date]);
+      const currentDay = sanitizeDay(currentState.days[date] || dayTemplate());
+      const importedDay = sanitizeDay(importedSource);
+      const currentMode = normalizeMode(currentDay.mode)
+        || currentDay.entries.map(entry => normalizeMode(entry.type)).find(Boolean)
+        || null;
+      const importedMode = normalizeMode(importedDay.mode)
+        || importedDay.entries.map(entry => normalizeMode(entry.type)).find(Boolean)
+        || null;
+
+      let importedEntries = importedDay.entries;
+      if (currentDay.entries.length && importedEntries.length && currentMode && importedMode && currentMode !== importedMode) {
+        stats.conflicts += importedEntries.length;
+        importedEntries = [];
+      } else if (!currentDay.entries.length && importedEntries.length && importedMode) {
+        currentDay.mode = importedMode;
+        currentDay.modeInherited = false;
+      } else if (!currentDay.mode && importedMode) {
+        currentDay.mode = importedMode;
+        currentDay.modeInherited = importedDay.modeInherited;
+      }
+
+      const entryMerge = mergeItemCollection(currentDay.entries, importedEntries, entryMergeSignature, 'import-entry');
+      const noteMerge = mergeItemCollection(currentDay.notes, importedDay.notes, noteMergeSignature, 'import-note');
+      currentDay.entries = entryMerge.items;
+      currentDay.notes = noteMerge.items;
+
+      if (!currentDay.statusOverride && importedDay.statusOverride) {
+        currentDay.statusOverride = importedDay.statusOverride;
+      } else if (currentDay.statusOverride && importedDay.statusOverride && currentDay.statusOverride !== importedDay.statusOverride) {
+        stats.conflicts += 1;
+      }
+
+      if (currentDay.entries.length) {
+        currentDay.mode = normalizeMode(currentDay.entries[0].type) || currentDay.mode;
+        currentDay.modeLocked = true;
+        currentDay.modeInherited = false;
+      }
+
+      stats.entriesAdded += entryMerge.added;
+      stats.notesAdded += noteMerge.added;
+      stats.duplicates += entryMerge.duplicates + noteMerge.duplicates;
+      stats.conflicts += entryMerge.conflicts + noteMerge.conflicts;
+
+      const changed = entryMerge.added || noteMerge.added
+        || (!hadCurrentDay && (importedDay.mode || importedDay.statusOverride || importedDay.entries.length || importedDay.notes.length));
+      if (!hadCurrentDay && changed) stats.daysAdded += 1;
+      else if (hadCurrentDay && (entryMerge.added || noteMerge.added)) stats.daysUpdated += 1;
+
+      mergedDays[date] = sanitizeDay(currentDay);
+    });
+
+    const currentHolidays = Array.isArray(currentState.settings.holidays) ? currentState.settings.holidays : [];
+    const importedHolidays = Array.isArray(importedState.settings.holidays) ? importedState.settings.holidays : [];
+    const settings = {
+      ...currentState.settings,
+      holidays: [...new Set([...currentHolidays, ...importedHolidays])].sort()
+    };
+
+    return {
+      state: {
+        ...currentState,
+        schema: APP_SCHEMA,
+        employeeName: currentState.employeeName || importedState.employeeName || '',
+        settings,
+        days: mergedDays,
+        selectedDate: todayISO(),
+        weekDate: todayISO(),
+        lastMode: normalizeMode(currentState.lastMode) || deriveLatestMode(mergedDays),
+        lastWorkflow: normalizeWorkflow(currentState.lastWorkflow) || deriveLatestWorkflow(mergedDays),
+        lastOutcome: normalizeOutcome(currentState.lastOutcome || importedState.lastOutcome || 'Contacted'),
+        welcomeDone: true
+      },
+      stats
+    };
+  }
+
   async function importBackup(file) {
     try {
       const parsed = JSON.parse(await file.text());
       if (!parsed || typeof parsed !== 'object' || !parsed.days) throw new Error('This is not a recognized tracker backup.');
-      const defaults = defaultState();
-      const importedDays = {};
-      Object.entries(parsed.days).forEach(([date, day]) => {
-        const validDate = parseDate(date);
-        if (validDate) importedDays[validDate] = sanitizeDay(day);
-      });
-      const importedSettings = { ...defaults.settings, ...(parsed.settings || {}) };
-      importedSettings.automaticTimeZone = importedSettings.automaticTimeZone !== false;
-      importedSettings.timeZone = validTimeZone(importedSettings.timeZone) ? importedSettings.timeZone : detectTimeZone();
-      importedSettings.holidays = [...new Set((Array.isArray(importedSettings.holidays) ? importedSettings.holidays : [])
-        .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value)))].sort();
-      state = {
-        ...defaults,
-        ...parsed,
-        schema: APP_SCHEMA,
-        days: importedDays,
-        settings: importedSettings,
-        selectedDate: todayISO(),
-        weekDate: todayISO(),
-        lastMode: normalizeMode(parsed.lastMode) || deriveLatestMode(importedDays),
-        lastWorkflow: normalizeWorkflow(parsed.lastWorkflow) || deriveLatestWorkflow(importedDays),
-        welcomeDone: true
-      };
+      const merged = mergeBackupState(parsed);
+      state = merged.state;
       ensureTodayModeDefault();
-      const backupSaved = await saveState('Backup imported');
+      const backupSaved = await saveState('Backup merged');
       if (!backupSaved) throw new Error('The backup was opened, but this device could not store it. Download a new backup before closing the tracker.');
       applySettings();
       closeOverlays();
       renderAll();
-      toast(`${Object.keys(importedDays).length} day${Object.keys(importedDays).length === 1 ? '' : 's'} imported.`);
+      const added = merged.stats.entriesAdded + merged.stats.notesAdded;
+      const duplicateText = merged.stats.duplicates
+        ? ` ${merged.stats.duplicates.toLocaleString()} duplicate${merged.stats.duplicates === 1 ? '' : 's'} ignored.`
+        : '';
+      const conflictText = merged.stats.conflicts
+        ? ` ${merged.stats.conflicts.toLocaleString()} conflict${merged.stats.conflicts === 1 ? '' : 's'} kept the current tracker version.`
+        : '';
+      toast(`Backup merged: ${added.toLocaleString()} new item${added === 1 ? '' : 's'} added.${duplicateText}${conflictText}`);
     } catch (error) {
       console.error(error);
-      toast(error.message || 'The backup could not be imported.');
+      toast(error.message || 'The backup could not be merged.');
     }
   }
-
 
   function employeeNameFromFilename(filename) {
     const base = String(filename || '')
@@ -2217,6 +2368,14 @@ $('#stickyUndoTally').addEventListener('click', () => undoLastTallyForDate(today
 
   function initialize() {
     removeVisibleVersionLabels();
+
+    const importBackupButton = $('#importBackupButton');
+    if (importBackupButton) importBackupButton.textContent = 'Merge JSON Backup';
+    const backupSettings = $('#backupSettings');
+    const backupDescription = backupSettings ? $('.subtle', backupSettings) : null;
+    if (backupDescription) {
+      backupDescription.textContent = 'A JSON backup adds missing days, keys, tallies, notes, and excluded dates to the data already saved here. Exact duplicates are ignored, conflicts keep the current tracker version, and your current settings and appearance stay in place. Older monthly Key Tracker workbooks and standard Excel or CSV activity tables are also supported.';
+    }
     ensureTodayModeDefault();
     $('#dashboardStart').value = startOfMonth();
     $('#dashboardEnd').value = endOfMonth();
@@ -2232,7 +2391,7 @@ $('#stickyUndoTally').addEventListener('click', () => undoLastTallyForDate(today
     if (!state.welcomeDone) showWelcome();
 
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('./service-worker.js?build=18', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('./service-worker.js?build=26', { updateViaCache: 'none' })
         .then(registration => registration.update())
         .catch(error => console.warn('Service worker registration failed:', error));
     }
