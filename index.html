@@ -873,18 +873,18 @@ input.compact-entry{resize:none}
         </div>
         <div class="helper" style="margin-top:8px">Text automatically switches to a readable light or dark color when a selected combination does not have enough contrast.</div><div class="field" style="margin-top:12px"><label for="cornerRadius">Corner Style</label><input id="cornerRadius" type="range" min="0" max="26" value="14"><div class="helper"><span id="radiusValue">14</span> px</div></div>
       </div>
-      <h3 style="margin:22px 0 10px">Backup & Restore</h3>
-      <div class="status-banner"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M5 21h14"/></svg><div><strong>Full tracker backup</strong><div class="subtle">One backup includes all years, entries, employee information, themes, and settings.</div></div></div>
+      <h3 style="margin:22px 0 10px">Backup & Merge</h3>
+      <div class="status-banner"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M5 21h14"/></svg><div><strong>Full tracker backup</strong><div class="subtle">One backup includes all years, entries, employee information, themes, and settings. Merging a backup adds missing activity without replacing what is already saved.</div></div></div>
       <div class="status-banner" id="storageStatusBanner"><span>✓</span><div><strong id="storageStatusTitle">Browser storage ready</strong><div class="subtle" id="storageStatusText">Entries are saved automatically on this browser.</div></div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         <button class="btn" id="downloadBackupBtn">Download Backup</button>
-        <button class="btn" id="restoreBackupBtn">Restore Backup</button>
+        <button class="btn" id="restoreBackupBtn">Merge Backup</button>
         <button class="btn btn-accent" id="importExcelBtn">Import Previous Excel Tracker</button>
         <input type="file" id="restoreFileInput" accept="application/json,.json" class="hidden">
         <input type="file" id="excelFileInput" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" class="hidden">
       </div>
       <h3 style="margin:22px 0 10px">Data Safety</h3>
-      <div class="subtle">Previous dates are permanently read-only. Excel import is the approved way to bring in historical entries from the former tracker. Restoring a backup replaces the tracker currently saved in this browser after confirmation.</div>
+      <div class="subtle">Previous dates are permanently read-only. Excel import is the approved way to bring in historical entries from the former tracker. Merging a JSON backup keeps current activity and settings, adds missing activity, and ignores exact duplicates. A safety backup of the current tracker downloads automatically before every merge.</div>
     </div>
     <div class="modal-actions"><button class="btn btn-primary" id="saveSettingsBtn">Save Settings</button></div>
   </div>
@@ -1889,8 +1889,80 @@ function downloadBackup(){
   const blob=new Blob([JSON.stringify({...state,exportedAt:new Date().toISOString()},null,2)],{type:'application/json'}); const a=document.createElement('a');
   a.href=URL.createObjectURL(blob); const safe=(state.employeeName||'Employee').replace(/[^a-z0-9]+/gi,'_'); a.download=`${safe}_Key_Tally_Tracker_Full_Backup_${todayKey()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),500); toast('Full backup downloaded.');
 }
+
+function downloadStateSnapshot(snapshot,label){
+  const blob=new Blob([JSON.stringify({...snapshot,exportedAt:new Date().toISOString()},null,2)],{type:'application/json'});const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);const safe=(snapshot.employeeName||'Employee').replace(/[^a-z0-9]+/gi,'_');a.download=`${safe}_Key_Tally_Tracker_${label}_${todayKey()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500);
+}
+function stableMergeValue(value){
+  if(Array.isArray(value))return value.map(stableMergeValue);
+  if(value&&typeof value==='object')return Object.fromEntries(Object.keys(value).sort().map(key=>[key,stableMergeValue(value[key])]));
+  return value===undefined?null:value;
+}
+function entryMergeSignature(entry){
+  const normalized={};
+  Object.keys(entry||{}).sort().forEach(key=>{
+    if(['id','groupId','groupIndex'].includes(key))return;
+    normalized[key]=key==='key'?normalizeKey(entry[key]):entry[key];
+  });
+  return JSON.stringify(stableMergeValue(normalized));
+}
+function mergeEntryLists(currentEntries,importedEntries){
+  const merged=(currentEntries||[]).map(entry=>({...entry}));
+  const currentById=new Map();const availableBySignature=new Map();const matchedBySignature=new Map();
+  merged.forEach(entry=>{
+    if(entry.id)currentById.set(String(entry.id),entry);
+    const signature=entryMergeSignature(entry);availableBySignature.set(signature,(availableBySignature.get(signature)||0)+1);
+  });
+  const consumeCurrentMatch=signature=>{
+    const available=availableBySignature.get(signature)||0,matched=matchedBySignature.get(signature)||0;
+    if(matched>=available)return false;matchedBySignature.set(signature,matched+1);return true;
+  };
+  let added=0,duplicates=0,conflicts=0;
+  (importedEntries||[]).forEach(importedEntry=>{
+    const entry={...importedEntry},id=entry.id?String(entry.id):'',signature=entryMergeSignature(entry);
+    if(id&&currentById.has(id)){
+      if(entryMergeSignature(currentById.get(id))===signature){consumeCurrentMatch(signature);duplicates++;}else conflicts++;
+      return;
+    }
+    if(consumeCurrentMatch(signature)){duplicates++;return;}
+    if(!id)entry.id=uid();
+    merged.push(entry);currentById.set(String(entry.id),entry);added++;
+  });
+  return {entries:merged,added,duplicates,conflicts};
+}
+function mergeBackupData(backup){
+  const current=mergeSavedState(state),imported=mergeSavedState(backup),entries={};
+  const stats={daysAdded:0,daysUpdated:0,entriesAdded:0,duplicates:0,conflicts:0};
+  const dates=new Set([...Object.keys(current.entries||{}),...Object.keys(imported.entries||{})]);
+  dates.forEach(date=>{
+    const hadCurrent=Array.isArray(current.entries?.[date]),currentList=current.entries?.[date]||[],importedList=imported.entries?.[date]||[];
+    const result=mergeEntryLists(currentList,importedList);entries[date]=result.entries;
+    stats.entriesAdded+=result.added;stats.duplicates+=result.duplicates;stats.conflicts+=result.conflicts;
+    if(!hadCurrent&&result.added)stats.daysAdded++;else if(hadCurrent&&result.added)stats.daysUpdated++;
+  });
+  const dayMeta={...current.dayMeta};
+  Object.entries(imported.dayMeta||{}).forEach(([date,meta])=>{dayMeta[date]=current.dayMeta?.[date]?{...meta,...current.dayMeta[date]}:{...meta};});
+  return {
+    state:{...current,employeeName:current.employeeName||imported.employeeName||'',setupComplete:Boolean(current.setupComplete||imported.setupComplete),entries,dayMeta,selectedDate:todayKey(),selectedYear:new Date().getFullYear(),_savedAt:Date.now()},
+    stats
+  };
+}
 function restoreBackup(file){
-  const reader=new FileReader(); reader.onload=()=>{ try{ const data=JSON.parse(reader.result); if(!data.entries||!data.dayMeta) throw new Error('Invalid backup'); if(!confirm('Restore this backup? The tracker currently saved in this browser will be replaced.')) return; state=mergeSavedState(data);state.version=17;migrateEntryGroups();migrateTrackingModes();migrateIphSettings();migrateDailySchedules();migrateDisplayOptions();migrateDailyEmailSettings(); saveState(); applyTheme(state.theme); closeModal('settingsModal'); renderAll(); toast('Backup restored.'); }catch(e){ alert('This file could not be restored. Choose a valid Key Tracker backup JSON file.'); } }; reader.readAsText(file);
+  const reader=new FileReader();reader.onload=()=>{
+    try{
+      const data=JSON.parse(reader.result);if(!data.entries||!data.dayMeta)throw new Error('Invalid backup');
+      if(!confirm('Merge this backup with the tracker saved in this browser? Current keys and settings will remain. A safety backup of the current tracker will download first.'))return;
+      const beforeMerge=JSON.parse(JSON.stringify(state));
+      try{localStorage.setItem('annual_key_tracker_before_last_merge',JSON.stringify(beforeMerge));}catch(error){console.warn('The local pre-merge safety copy could not be stored.',error);}
+      downloadStateSnapshot(beforeMerge,'Before_Merge');
+      const merged=mergeBackupData(data);state=merged.state;state.version=21;migrateEntryGroups();migrateTrackingModes();migrateIphSettings();migrateDailySchedules();migrateDisplayOptions();migrateDailyEmailSettings();
+      saveState();applyTheme(state.theme);closeModal('settingsModal');renderAll();
+      const duplicateText=merged.stats.duplicates?` ${merged.stats.duplicates} exact duplicate${merged.stats.duplicates===1?' was':'s were'} ignored.`:'';
+      const conflictText=merged.stats.conflicts?` ${merged.stats.conflicts} conflict${merged.stats.conflicts===1?' kept':'s kept'} the current tracker version.`:'';
+      toast(`Backup merged: ${merged.stats.entriesAdded} new interaction${merged.stats.entriesAdded===1?'':'s'} added.${duplicateText}${conflictText}`);
+    }catch(e){console.error(e);alert('This file could not be merged. Choose a valid Key Tracker backup JSON file.');}
+  };reader.readAsText(file);
 }
 
 function excelCellText(ws,r,c){const cell=ws[XLSX.utils.encode_cell({r,c})];if(!cell||cell.v==null)return '';return String(cell.v).trim();}
@@ -2284,7 +2356,7 @@ setInterval(()=>{const now=todayKey();if(now!==lastToday){lastToday=now;state.se
 async function startTracker(){
   // Refresh the installed app cache when this build is deployed to GitHub Pages or another web host.
   if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
-    navigator.serviceWorker.register('./service-worker.js?build=25',{updateViaCache:'none'}).then(reg=>reg.update()).catch(()=>{});
+    navigator.serviceWorker.register('./service-worker.js?build=27',{updateViaCache:'none'}).then(reg=>reg.update()).catch(()=>{});
   }
   await hydrateFromIndexedDb();
   applyTheme(state.theme);
